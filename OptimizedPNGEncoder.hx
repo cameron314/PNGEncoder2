@@ -79,6 +79,8 @@ class OptimizedPNGEncoder {
 	private static inline function buildIHDRChunk(img : BitmapData)
 	{
 		var IHDR:ByteArray = new ByteArray();
+		IHDR.length = 13;
+		
 		IHDR.writeInt(img.width);
 		IHDR.writeInt(img.height);
 		IHDR.writeUnsignedInt(0x08060000); // 32bit RGBA
@@ -92,24 +94,29 @@ class OptimizedPNGEncoder {
 	{
 		// Build IDAT chunk
 		var IDAT:ByteArray = new ByteArray();
+		IDAT.length = img.width * img.height * 4 + img.height;
 		
-		for(i in 0...img.height) {
-			IDAT.writeByte(0);		// No filter
-			
-			var p:UInt;			// Current pixel value in ARGB format
-			
-			if ( !img.transparent ) {
+		var p:UInt;			// Current pixel value in ARGB format
+		
+		if ( img.transparent ) {
+			for(i in 0...img.height) {
+				IDAT.writeByte(0);		// No filter
+				
+				for(j in 0...img.width) {
+					p = img.getPixel32(j,i);
+					IDAT.writeUnsignedInt(
+						cast(((p&0xFFFFFF) << 8)|(p>>>24), UInt));
+				}
+			}
+		}
+		else {
+			for(i in 0...img.height) {
+				IDAT.writeByte(0);		// No filter
+				
 				for(j in 0...img.width) {
 					p = img.getPixel(j,i);
 					IDAT.writeUnsignedInt(
 						cast(((p&0xFFFFFF) << 8)|0xFF, UInt));
-				}
-			} else {
-				for(j in 0...img.width) {
-					p = img.getPixel32(j,i);
-					IDAT.writeUnsignedInt(
-						cast(((p&0xFFFFFF) << 8)|
-						(p>>>24), UInt));
 				}
 			}
 		}
