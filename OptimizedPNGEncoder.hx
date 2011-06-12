@@ -36,6 +36,7 @@ import flash.display.Bitmap;
 import flash.display.BitmapData;
 import flash.geom.Rectangle;
 import flash.Memory;
+import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
 
@@ -94,6 +95,13 @@ class OptimizedPNGEncoder {
 	}
 	
 	
+	// Copies length bytes (all by default) from src into flash.Memory at the specified offset
+	private static inline function memcpy(src : ByteArray, offset : UInt, ?length : UInt) : Void
+	{
+		src.readBytes(ApplicationDomain.currentDomain.domainMemory, offset, length);
+	}
+	
+	
 	private static inline function buildIDATChunk(img : BitmapData)
 	{
 		// Length of IDAT: 4 bytes per pixel + 1 byte per scanline
@@ -103,19 +111,19 @@ class OptimizedPNGEncoder {
 		var scratchSize : UInt = img.width * img.height * 4;
 		
 		var IDAT:ByteArray = new ByteArray();		// IDAT + scratch at end
-		IDAT.length = Std.int(Math.max(length + scratchSize, 0x400));	// Minimum size for Memory.select
+		IDAT.length = Std.int(Math.max(length + scratchSize, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		Memory.select(IDAT);
 		
 		var addr : UInt = 0;
 		var scratchAddr = length;
 		
 		var imgBytes = img.getPixels(new Rectangle(0, 0, img.width, img.height));
 		imgBytes.position = 0;
-		imgBytes.readBytes(IDAT, scratchAddr);
+		memcpy(imgBytes, scratchAddr);
 		
 		var width = img.width;
 		var height = img.height;
 		
-		Memory.select(IDAT);
 		if (img.transparent) {
 			for (i in 0 ... height) {
 				Memory.setByte(addr, 0);		// No filter
