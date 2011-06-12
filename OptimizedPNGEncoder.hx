@@ -1,6 +1,7 @@
 /*
 	Copyright (c) 2008, Adobe Systems Incorporated
 	Copyright (c) 2011, Pimm Hogeling and Edo Rivai
+	Copyright (c) 2011, Cameron Desrochers
 	All rights reserved.
 
 	Redistribution and use in source and binary forms, with or without 
@@ -81,7 +82,7 @@ class OptimizedPNGEncoder {
 	}
 	
 	
-	private static inline function buildIHDRChunk(img : BitmapData)
+	private static inline function buildIHDRChunk(img : BitmapData) : ByteArray
 	{
 		var IHDR:ByteArray = new ByteArray();
 		IHDR.length = 13;
@@ -104,11 +105,14 @@ class OptimizedPNGEncoder {
 	
 	private static inline function buildIDATChunk(img : BitmapData)
 	{
+		var width = img.width;
+		var height = img.height;
+		
 		// Length of IDAT: 4 bytes per pixel + 1 byte per scanline
-		var length : UInt = img.width * img.height * 4 + img.height;
+		var length : UInt = width * height * 4 + height;
 		
 		// Size needed to store byte array of bitmap
-		var scratchSize : UInt = img.width * img.height * 4;
+		var scratchSize : UInt = width * height * 4;
 		
 		var IDAT:ByteArray = new ByteArray();		// IDAT + scratch at end
 		IDAT.length = Std.int(Math.max(length + scratchSize, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
@@ -117,12 +121,9 @@ class OptimizedPNGEncoder {
 		var addr : UInt = 0;
 		var scratchAddr = length;
 		
-		var imgBytes = img.getPixels(new Rectangle(0, 0, img.width, img.height));
+		var imgBytes = img.getPixels(new Rectangle(0, 0, width, height));
 		imgBytes.position = 0;
 		memcpy(imgBytes, scratchAddr);
-		
-		var width = img.width;
-		var height = img.height;
 		
 		if (img.transparent) {
 			for (i in 0 ... height) {
@@ -201,11 +202,32 @@ class OptimizedPNGEncoder {
 		var e:UInt = png.position;
 		png.position = p;
 		c = 0xffffffff;
-		//for (var i:Int = 0; i < (e-p); i++) {
-		for (i in 0...(e - p)) {
-			c = cast(crcTable[
-				(c ^ png.readUnsignedByte()) & 
+		
+		// First four bytes are from type, rest are chunk data
+		c = cast(crcTable[
+				(c ^ (type >>> 24)) & 
 				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+		c = cast(crcTable[
+				(c ^ ((type >>> 16) & 0xFF)) & 
+				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+		c = cast(crcTable[
+				(c ^ ((type >>> 8) & 0xFF)) & 
+				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+		c = cast(crcTable[
+				(c ^ (type & 0xFF)) & 
+				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+		
+		//for (var i:Int = 0; i < (e-p); i++) {
+		if (data != null) {
+			data.length = Std.int(Math.max(len, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+			Memory.select(data);
+			
+			data.position = 0;
+			for (i in 0...len) {
+				c = cast(crcTable[
+					(c ^ Memory.getByte(i)) & 
+					cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+			}
 		}
 		c = cast(c^cast(0xffffffff, UInt), UInt);
 		png.position = e;
