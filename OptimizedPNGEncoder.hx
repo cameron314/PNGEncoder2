@@ -175,12 +175,12 @@ class OptimizedPNGEncoder {
 		if (!crcTableComputed) {
 			crcTableComputed = true;
 			crcTable = [];
-			//for (var n:UInt = 0; n < 256; n++) {
-			for (n in 0...256) {
+			
+			for (n in 0 ... 256) {
 				c = n;
-				//for (var k:UInt = 0; k < 8; k++) {
-				for (k in 0...8) {
-					if (1 == c & 1) {
+				
+				for (k in 0 ... 8) {
+					if (c & 1 == 1) {
 						c = 0xedb88320 ^ (c >>> 1);
 					} else {
 						c >>>= 1;
@@ -195,23 +195,21 @@ class OptimizedPNGEncoder {
 		if (data != null) {
 			len = data.length;
 		}
+		
 		png.writeUnsignedInt(len);
-		var p:UInt = png.position;
 		png.writeUnsignedInt(type);
-		if ( data != null ) {
+		if (data != null) {
 			png.writeBytes(data);
 		}
-		var e:UInt = png.position;
-		png.position = p;
+		
 		c = 0xffffffff;
 		
-		// First four bytes are from type, rest are chunk data
+		// Unroll first four iterations from type bytes, rest use chunk data
 		c = crcTable[(c ^ (type >>> 24)) & 0xff] ^ (c >>> 8);
 		c = crcTable[(c ^ ((type >>> 16) & 0xFF)) & 0xff] ^ (c >>> 8);
 		c = crcTable[(c ^ ((type >>> 8) & 0xFF)) & 0xff] ^ (c >>> 8);
 		c = crcTable[(c ^ (type & 0xFF)) & 0xff] ^ (c >>> 8);
 		
-		//for (var i:Int = 0; i < (e-p); i++) {
 		if (data != null) {
 			data.length = Std.int(Math.max(len, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 			Memory.select(data);
@@ -223,7 +221,6 @@ class OptimizedPNGEncoder {
 		}
 		c ^= 0xffffffff;
 		
-		png.position = e;
 		png.writeUnsignedInt(c);
 	}
 }
