@@ -36,6 +36,7 @@ package;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
 import flash.geom.Rectangle;
+import flash.Lib;
 import flash.Memory;
 import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
@@ -180,13 +181,14 @@ class OptimizedPNGEncoder {
 				//for (var k:UInt = 0; k < 8; k++) {
 				for (k in 0...8) {
 					if (1 == c & 1) {
-						c = cast(cast(0xedb88320, UInt) ^ 
-							cast(c >>> 1, UInt), UInt);
+						c = 0xedb88320 ^ (c >>> 1);
 					} else {
-						c = cast(c >>> 1, UInt);
+						c >>>= 1;
 					}
 				}
 				crcTable[n] = c;
+				
+				//Lib.trace(c);
 			}
 		}
 		var len:UInt = 0;
@@ -204,18 +206,10 @@ class OptimizedPNGEncoder {
 		c = 0xffffffff;
 		
 		// First four bytes are from type, rest are chunk data
-		c = cast(crcTable[
-				(c ^ (type >>> 24)) & 
-				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
-		c = cast(crcTable[
-				(c ^ ((type >>> 16) & 0xFF)) & 
-				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
-		c = cast(crcTable[
-				(c ^ ((type >>> 8) & 0xFF)) & 
-				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
-		c = cast(crcTable[
-				(c ^ (type & 0xFF)) & 
-				cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+		c = crcTable[(c ^ (type >>> 24)) & 0xff] ^ (c >>> 8);
+		c = crcTable[(c ^ ((type >>> 16) & 0xFF)) & 0xff] ^ (c >>> 8);
+		c = crcTable[(c ^ ((type >>> 8) & 0xFF)) & 0xff] ^ (c >>> 8);
+		c = crcTable[(c ^ (type & 0xFF)) & 0xff] ^ (c >>> 8);
 		
 		//for (var i:Int = 0; i < (e-p); i++) {
 		if (data != null) {
@@ -224,12 +218,11 @@ class OptimizedPNGEncoder {
 			
 			data.position = 0;
 			for (i in 0...len) {
-				c = cast(crcTable[
-					(c ^ Memory.getByte(i)) & 
-					cast(0xff, UInt)] ^ cast(c >>> 8, UInt), UInt);
+				c = crcTable[(c ^ Memory.getByte(i)) & 0xff] ^ (c >>> 8);
 			}
 		}
-		c = cast(c^cast(0xffffffff, UInt), UInt);
+		c ^= 0xffffffff;
+		
 		png.position = e;
 		png.writeUnsignedInt(c);
 	}
