@@ -97,30 +97,32 @@ class OptimizedPNGEncoder {
 	private static inline function buildIDATChunk(img : BitmapData)
 	{
 		// Length of IDAT: 4 bytes per pixel + 1 byte per scanline
-		var length = img.width * img.height * 4 + img.height;
+		var length : UInt = img.width * img.height * 4 + img.height;
 		
 		// Size needed to store byte array of bitmap
-		var scratchSize = img.width * img.height * 4;
+		var scratchSize : UInt = img.width * img.height * 4;
 		
 		var IDAT:ByteArray = new ByteArray();		// IDAT + scratch at end
 		IDAT.length = Std.int(Math.max(length + scratchSize, 0x400));	// Minimum size for Memory.select
 		
-		Memory.select(IDAT);
-		var addr = 0;
-		
+		var addr : UInt = 0;
 		var scratchAddr = length;
 		
 		var imgBytes = img.getPixels(new Rectangle(0, 0, img.width, img.height));
 		imgBytes.position = 0;
 		imgBytes.readBytes(IDAT, scratchAddr);
 		
-		if ( img.transparent ) {
-			for (i in 0...img.height) {
+		var width = img.width;
+		var height = img.height;
+		
+		Memory.select(IDAT);
+		if (img.transparent) {
+			for (i in 0 ... height) {
 				Memory.setByte(addr, 0);		// No filter
 				addr += 1;
 				
 				// Copy line, moving alpha byte to end
-				for (j in 0...img.width) {
+				for (j in 0 ... width) {
 					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
 					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
 					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
@@ -131,12 +133,12 @@ class OptimizedPNGEncoder {
 			}
 		}
 		else {
-			for(i in 0...img.height) {
+			for (i in 0 ... height) {
 				Memory.setByte(addr, 0);		// No filter
 				addr += 1;
 				
 				// Copy line, moving alpha byte to end
-				for (j in 0...img.width) {
+				for (j in 0 ... width) {
 					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
 					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
 					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
@@ -146,8 +148,6 @@ class OptimizedPNGEncoder {
 				}
 			}
 		}
-		
-		Memory.setByte(0, 0);
 		
 		IDAT.length = length;
 		IDAT.compress();
