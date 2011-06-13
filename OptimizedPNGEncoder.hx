@@ -161,6 +161,7 @@ class OptimizedPNGEncoder
 		IDAT.length = Std.int(Math.max(length + scratchSize, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(IDAT);
 		
+		
 		var addr : UInt = 0;
 		var scratchAddr = length;
 		
