@@ -113,8 +113,12 @@ class OptimizedPNGEncoder
 		
 		Memory.setByte(CHUNK_START + 8, 8);		// Bit depth
 		
-		// TODO: Use RGB (colour type 2) if image is not transparent (should save ~25% space/time)
-		Memory.setByte(CHUNK_START + 9, 6);		// Colour type
+		if (img.transparent) {
+			Memory.setByte(CHUNK_START + 9, 6);		// RGBA colour type
+		}
+		else {
+			Memory.setByte(CHUNK_START + 9, 2);		// RGB colour type
+		}
 		
 		Memory.setByte(CHUNK_START + 10, 0);	// Compression method (always 0)
 		Memory.setByte(CHUNK_START + 11, 0);	// Filter method (always 0)
@@ -145,8 +149,10 @@ class OptimizedPNGEncoder
 		var width = img.width;
 		var height = img.height;
 		
-		// Length of IDAT: 4 bytes per pixel + 1 byte per scanline
-		var length : UInt = width * height * 4 + height;
+		var bytesPerPixel = img.transparent ? 4 : 3;
+		
+		// Length of IDAT: 3 or 4 bytes per pixel + 1 byte per scanline
+		var length : UInt = width * height * bytesPerPixel + height;
 		
 		// Size needed to store byte array of bitmap
 		var scratchSize : UInt = width * height * 4;
@@ -183,13 +189,12 @@ class OptimizedPNGEncoder
 				Memory.setByte(addr, 0);		// No filter
 				addr += 1;
 				
-				// Copy line, moving alpha byte to end
+				// Copy line
 				for (j in 0 ... width) {
 					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
 					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
 					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
-					Memory.setByte(addr + 3, 0xFF);
-					addr += 4;
+					addr += 3;
 					scratchAddr += 4;
 				}
 			}
