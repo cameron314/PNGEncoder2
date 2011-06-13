@@ -46,31 +46,50 @@ import flash.utils.Endian;
 /**
  * Class that converts BitmapData into a valid PNG
  */	
-class OptimizedPNGEncoder {
+class OptimizedPNGEncoder
+{
+	private static inline var CRC_TABLE_END = 256 * 4;
+	private static inline var CHUNK_START = CRC_TABLE_END;
+	private static var data : ByteArray;
+	
+	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
-	 * Uses flash.Memory to speed things up (so beware of conflicts)
+	 * Uses flash.Memory to speed things up
 	 *
 	 * @param image The BitmapData that will be converted into the PNG format.
 	 * @return a ByteArray representing the PNG encoded image data.
-	 * @playerversion Flash 9.0
-	 */			
-	public static function encode(img:BitmapData):ByteArray {
+	 * @playerversion Flash 10
+	 */
+	public static function encode(img:BitmapData):ByteArray
+	{
+		// Save current domain memory and restore it after, to avoid
+		// conflicts with other components using domain memory
+		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+		
+		// Data will be select()ed for use with fast memory
+		// The first 256 * 4 bytes are the CRC table
+		// Inner chunk data is appended to the CRC table, starting at CHUNK_START
+		
+		initialize();		// Sets up data var & CRC table
+		
+		
 		// Create output byte array
 		var png:ByteArray = new ByteArray();
 		
 		writePNGSignature(png);
 		
-		// Build IHDR chunk
-		var IHDR = buildIHDRChunk(img);
-		writeChunk(png, 0x49484452, IHDR);
+		// Build chunks (get stored in data starting at CHUNK_START)
 		
-		var IDAT = buildIDATChunk(img);
+		var chunkLength = buildIHDRChunk(img);
+		writeChunk(png, 0x49484452, chunkLength);
 		
-		writeChunk(png, 0x49444154, IDAT);
+		chunkLength = buildIDATChunk(img);
+		writeChunk(png, 0x49444154, chunkLength);
 		
-		// Build IEND chunk
-		writeChunk(png, 0x49454E44, null);
+		writeChunk(png, 0x49454E44, 0);
+		
+		ApplicationDomain.currentDomain.domainMemory = oldFastMem;
 		
 		png.position = 0;
 		return png;
@@ -83,24 +102,41 @@ class OptimizedPNGEncoder {
 	}
 	
 	
-	private static inline function buildIHDRChunk(img : BitmapData) : ByteArray
+	private static inline function buildIHDRChunk(img : BitmapData)
 	{
-		var IHDR:ByteArray = new ByteArray();
-		IHDR.length = 13;
+		var chunkLength = 13;
+		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		Memory.select(data);
 		
-		IHDR.writeInt(img.width);
-		IHDR.writeInt(img.height);
-		IHDR.writeUnsignedInt(0x08060000); // 32bit RGBA
-		IHDR.writeByte(0);
+		writeI32BE(CHUNK_START, img.width);
+		writeI32BE(CHUNK_START + 4, img.height);
 		
-		return IHDR;
+		Memory.setByte(CHUNK_START + 8, 8);		// Bit depth
+		
+		// TODO: Use RGB (colour type 2) if image is not transparent (should save ~25% space/time)
+		Memory.setByte(CHUNK_START + 9, 6);		// Colour type
+		
+		Memory.setByte(CHUNK_START + 10, 0);	// Compression method (always 0)
+		Memory.setByte(CHUNK_START + 11, 0);	// Filter method (always 0)
+		Memory.setByte(CHUNK_START + 12, 0);	// No interlacing
+		
+		return chunkLength;
 	}
 	
 	
 	// Copies length bytes (all by default) from src into flash.Memory at the specified offset
-	private static inline function memcpy(src : ByteArray, offset : UInt, ?length : UInt) : Void
+	private static inline function memcpy(src : ByteArray, offset : UInt, length : UInt = 0) : Void
 	{
 		src.readBytes(ApplicationDomain.currentDomain.domainMemory, offset, length);
+	}
+	
+	// Writes one integer into flash.Memory at the given address, in big-endian order
+	private static inline function writeI32BE(addr: UInt, value : UInt) : Void
+	{
+		Memory.setByte(addr, value >>> 24);
+		Memory.setByte(addr + 1, value >>> 16);
+		Memory.setByte(addr + 2, value >>> 8);
+		Memory.setByte(addr + 3, value);
 	}
 	
 	
@@ -162,20 +198,63 @@ class OptimizedPNGEncoder {
 		IDAT.length = length;
 		IDAT.compress();
 		
-		return IDAT;
+		var chunkLength = IDAT.length;
+		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		Memory.select(data);
+		
+		IDAT.position = 0;
+		memcpy(IDAT, CHUNK_START);
+		
+		return chunkLength;
+	}
+	
+	
+
+	private static inline function writeChunk(png : ByteArray, type : UInt, chunkLength : UInt) : Void
+	{
+		var len = chunkLength;
+		
+		png.writeUnsignedInt(len);
+		png.writeUnsignedInt(type);
+		if (len != 0) {
+			data.position = CHUNK_START;
+			data.readBytes(png, png.position);
+			png.position += len;
+		}
+		
+		var c : UInt = 0xFFFFFFFF;
+		
+		// Unroll first four iterations from type bytes, rest use chunk data
+		c = crcTable(c ^ (type >>> 24)) ^ (c >>> 8);
+		c = crcTable(c ^ ((type >>> 16) & 0xFF)) ^ (c >>> 8);
+		c = crcTable(c ^ ((type >>> 8) & 0xFF)) ^ (c >>> 8);
+		c = crcTable(c ^ (type & 0xFF)) ^ (c >>> 8);
+		
+		if (len != 0) {
+			for (i in CHUNK_START ... len + CHUNK_START) {
+				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
+			}
+		}
+		c ^= 0xFFFFFFFF;
+		
+		png.writeUnsignedInt(c);
 	}
 	
 	
 	
-	private static var crcTable:Array<UInt>;
-	private static var crcTableComputed:Bool  = false;
-
-	private static inline function writeChunk(png:ByteArray, type:UInt, data:ByteArray):Void {
-		var c:UInt;
-		if (!crcTableComputed) {
-			crcTableComputed = true;
-			crcTable = [];
-			
+	private static var crcComputed = false;
+	
+	private static inline function initialize() : Void
+	{
+		if (!crcComputed) {
+			data = new ByteArray();
+			data.length = Std.int(Math.max(CHUNK_START, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		}
+		
+		Memory.select(data);
+		
+		if (!crcComputed) {
+			var c : UInt;
 			for (n in 0 ... 256) {
 				c = n;
 				
@@ -186,41 +265,16 @@ class OptimizedPNGEncoder {
 						c >>>= 1;
 					}
 				}
-				crcTable[n] = c;
 				
-				//Lib.trace(c);
+				Memory.setI32(n << 2, c);
 			}
-		}
-		var len:UInt = 0;
-		if (data != null) {
-			len = data.length;
-		}
-		
-		png.writeUnsignedInt(len);
-		png.writeUnsignedInt(type);
-		if (data != null) {
-			png.writeBytes(data);
-		}
-		
-		c = 0xffffffff;
-		
-		// Unroll first four iterations from type bytes, rest use chunk data
-		c = crcTable[(c ^ (type >>> 24)) & 0xff] ^ (c >>> 8);
-		c = crcTable[(c ^ ((type >>> 16) & 0xFF)) & 0xff] ^ (c >>> 8);
-		c = crcTable[(c ^ ((type >>> 8) & 0xFF)) & 0xff] ^ (c >>> 8);
-		c = crcTable[(c ^ (type & 0xFF)) & 0xff] ^ (c >>> 8);
-		
-		if (data != null) {
-			data.length = Std.int(Math.max(len, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
-			Memory.select(data);
 			
-			data.position = 0;
-			for (i in 0...len) {
-				c = crcTable[(c ^ Memory.getByte(i)) & 0xff] ^ (c >>> 8);
-			}
+			crcComputed = true;
 		}
-		c ^= 0xffffffff;
-		
-		png.writeUnsignedInt(c);
+	}
+	
+	private static inline function crcTable(index : UInt) : UInt
+	{
+		return Memory.getI32((index & 0xFF) << 2);
 	}
 }
