@@ -120,7 +120,7 @@ class OptimizedPNGEncoder
 			Memory.setByte(CHUNK_START + 9, 2);		// RGB colour type
 		}
 		
-		Memory.setByte(CHUNK_START + 10, 0);	// Compression method (always 0)
+		Memory.setByte(CHUNK_START + 10, 0);	// Compression method (always 0 -> zlib)
 		Memory.setByte(CHUNK_START + 11, 0);	// Filter method (always 0)
 		Memory.setByte(CHUNK_START + 12, 0);	// No interlacing
 		
@@ -202,7 +202,9 @@ class OptimizedPNGEncoder
 		}
 		
 		IDAT.length = length;
-		IDAT.compress();
+		
+		IDAT.position = 0;
+		IDAT = compress(IDAT);
 		
 		var chunkLength = IDAT.length;
 		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
@@ -283,4 +285,85 @@ class OptimizedPNGEncoder
 	{
 		return Memory.getI32((index & 0xFF) << 2);
 	}
+	
+	
+	
+	
+	
+	
+	private static inline var ADDLER_MAX : UInt = 65521;		// Largest prime smaller than 65536
+	
+	// Uses zlib format (which uses deflate)
+	// See RFC 1950 (zlib) and RFC 1951 (deflate)
+	private static inline function compress(bytes : ByteArray)
+	{
+		var result = new ByteArray();
+		result.endian = LITTLE_ENDIAN;		// See RFC 1951
+		
+		result.writeByte(0x78);		// CMF with compression method 8 (deflate) 32K sliding window
+		result.writeByte(0x9C);		// FLG: Check bits, no dict, default algorithm
+		
+		var s1 : UInt = 1, s2 : UInt = 0;		// For Addler-32 sum
+		var byte : UInt;
+		
+		while (bytes.bytesAvailable != 0) {
+			var len = Std.int(Math.min(65535, bytes.bytesAvailable));		// Max size of uncompressed block
+			
+			// Write uncompressed block
+			result.writeByte(0x0);		// Uncompressed, not final block
+			result.writeShort(len);
+			result.writeShort(~len);
+			for (i in 0...len) {
+				byte = bytes.readByte() & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
+				
+				s1 = (s1 + byte) % ADDLER_MAX;
+				s2 = (s2 + s1) % ADDLER_MAX;
+				
+				result.writeByte(byte);
+			}
+		}
+		
+		// Write final block (easier than figuring out if last block was last in advance)
+		result.writeByte(0x1);
+		result.writeShort(0x0);		// zero-length block
+		result.writeShort(~0x0);
+		
+		result.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
+		
+		var addlerSum = (s2 << 16) | s1;
+		result.writeUnsignedInt(addlerSum);
+		
+		result.position = 0;
+		return result;
+	}
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
