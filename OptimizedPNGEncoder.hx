@@ -41,13 +41,17 @@ import flash.Memory;
 import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
+import DeflateStream;
 
 
 /**
  * Class that converts BitmapData into a valid PNG
- */	
+ */
 class OptimizedPNGEncoder
 {
+	// TODO: Unroll tight loops
+	
+	
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var CHUNK_START = CRC_TABLE_END;
 	private static var data : ByteArray;
@@ -176,9 +180,7 @@ class OptimizedPNGEncoder
 				
 				// Copy line, moving alpha byte to end
 				for (j in 0 ... width) {
-					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
+					Memory.setI32(addr, Memory.getI32(scratchAddr) >>> 8);
 					Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 0));
 					addr += 4;
 					scratchAddr += 4;
@@ -291,50 +293,18 @@ class OptimizedPNGEncoder
 	
 	
 	
-	private static inline var ADDLER_MAX : UInt = 65521;		// Largest prime smaller than 65536
-	
-	// Uses zlib format (which uses deflate)
-	// See RFC 1950 (zlib) and RFC 1951 (deflate)
 	private static inline function compress(bytes : ByteArray)
 	{
-		var result = new ByteArray();
-		result.endian = LITTLE_ENDIAN;		// See RFC 1951
+		var stream = new DeflateStream(CompressionLevel.UNCOMPRESSED, true);
 		
-		result.writeByte(0x78);		// CMF with compression method 8 (deflate) 32K sliding window
-		result.writeByte(0x9C);		// FLG: Check bits, no dict, default algorithm
-		
-		var s1 : UInt = 1, s2 : UInt = 0;		// For Addler-32 sum
-		var byte : UInt;
-		
-		while (bytes.bytesAvailable != 0) {
-			var len = Std.int(Math.min(65535, bytes.bytesAvailable));		// Max size of uncompressed block
-			
-			// Write uncompressed block
-			result.writeByte(0x0);		// Uncompressed, not final block
-			result.writeShort(len);
-			result.writeShort(~len);
-			for (i in 0...len) {
-				byte = bytes.readByte() & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
-				
-				s1 = (s1 + byte) % ADDLER_MAX;
-				s2 = (s2 + s1) % ADDLER_MAX;
-				
-				result.writeByte(byte);
-			}
+		while (bytes.bytesAvailable > 0) {
+			stream.WriteBlock(bytes);
 		}
 		
 		// Write final block (easier than figuring out if last block was last in advance)
-		result.writeByte(0x1);
-		result.writeShort(0x0);		// zero-length block
-		result.writeShort(~0x0);
+		stream.WriteBlock(new ByteArray(), true);
 		
-		result.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
-		
-		var addlerSum = (s2 << 16) | s1;
-		result.writeUnsignedInt(addlerSum);
-		
-		result.position = 0;
-		return result;
+		return stream.Finalize();
 	}
 }
 
