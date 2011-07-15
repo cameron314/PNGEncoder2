@@ -298,13 +298,13 @@ class OptimizedPNGEncoder
 		var stream = new DeflateStream(CompressionLevel.UNCOMPRESSED, true);
 		
 		while (bytes.bytesAvailable > 0) {
-			stream.WriteBlock(bytes);
+			stream.writeBlock(bytes);
 		}
 		
 		// Write final block (easier than figuring out if last block was last in advance)
-		stream.WriteBlock(new ByteArray(), true);
+		stream.writeBlock(new ByteArray(), true);
 		
-		return stream.Finalize();
+		return stream.finalize();
 	}
 }
 
