@@ -7,14 +7,28 @@ class DeflateStreamTests
 {
 	public static function run()
 	{
+		testEmptyHuffmanTree();
 		testSimpleHuffmanTree();
+	}
+	
+	
+	private static function testEmptyHuffmanTree()
+	{
+		// Arrange
+		var weights = new Array<UInt>();
+		
+		// Act
+		var tree = HuffmanTree.fromWeightedAlphabet(weights);
+		
+		// Assert
+		assert(tree.codes.length == 0);
 	}
 	
 	
 	private static function testSimpleHuffmanTree()
 	{
 		// Arrange
-		var weights = [ 1, 0, 2, 2 ];
+		var weights = [ 2, 3, 1, 1 ];
 		
 		// Act
 		var tree = HuffmanTree.fromWeightedAlphabet(weights);

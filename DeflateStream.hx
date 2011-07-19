@@ -62,7 +62,8 @@ class DeflateStream
 	private var s1 : UInt;
 	private var s2 : UInt;
 	
-	private var literalLengthLookup : Array<UInt>;
+	private var literalLengthLookup : Array<Int>;
+	private static var distanceLookup : Array<Int>;
 	
 	
 	public function new(level : CompressionLevel, writeZLIBInfo = false)
@@ -135,9 +136,13 @@ class DeflateStream
 			if (freshBlock) {
 				// Write Huffman trees
 				
-				// No lengths for now, just literals + EOB
 				var literalLengthTree = createLiteralLengthTree(bytes);
 				literalLengthLookup = literalLengthTree.codes;
+				
+				if (distanceLookup == null) {
+					var distanceTree = createDistanceTree();
+					distanceLookup = distanceTree.codes;
+				}
 				
 				// TODO: Write the trees into the stream as per RFC 1951
 			}
@@ -184,8 +189,10 @@ class DeflateStream
 	}
 	
 	
-	private inline function createLiteralLengthTree(sampleData : ByteArray)
+	private static inline function createLiteralLengthTree(sampleData : ByteArray)
 	{
+		// No lengths for now, just literals + EOB
+		
 		var weights = new Array<UInt>();
 		
 		for (value in 0 ... 256) {		// Literals
@@ -219,6 +226,16 @@ class DeflateStream
 		}
 		
 		sampleData.position = oldPosition;
+		
+		return HuffmanTree.fromWeightedAlphabet(weights);
+	}
+	
+	
+	private static inline function createDistanceTree()
+	{
+		var weights = new Array<UInt>();
+		
+		// No distances yet
 		
 		return HuffmanTree.fromWeightedAlphabet(weights);
 	}
@@ -282,7 +299,7 @@ class HuffmanTree
 	
 	
 	// Transforms weights into a correspondingt list of code lengths
-	private static function calculateOptimalCodeLengths(weights : Array<Int>)
+	private static inline function calculateOptimalCodeLengths(weights : Array<Int>)
 	{
 		var n  = weights.length;
 		var A = weights;			// Alias
@@ -312,11 +329,11 @@ class HuffmanTree
 					}
 
 					/* add on the second item */
-					if (leaf>=n || (getLow16(A, root) < getLow16(A, leaf))) {
-						setLow16(A, next, getLow16(A, root));
+					if (leaf>=n || (root < next && getLow16(A, root) < getLow16(A, leaf))) {
+						setLow16(A, next, getLow16(A, next) + getLow16(A, root));
 						setLow16(A, root++, next);
 					} else {
-						setLow16(A, next, getLow16(A, leaf++));
+						setLow16(A, next, getLow16(A, next) + getLow16(A, leaf++));
 					}
 					
 					++next;
@@ -414,7 +431,7 @@ class HuffmanTree
 	
 	
 	// Input is expected to be in sorted order, first by code length (decreasing), then by symbol (decreasing)
-	private static inline function calculateCanonicalCodes(codelens : Array<Int>) : Array<Int>
+	private static function calculateCanonicalCodes(codelens : Array<Int>) : Array<Int>
 	{
 		// Implements algorithm found on Wikipedia: http://en.wikipedia.org/wiki/Canonical_Huffman_code
 		
@@ -431,7 +448,7 @@ class HuffmanTree
 				table[s >>> 16] = (code << 16) | newLen;
 				++code;
 				curLen = newLen;
-				if ((code & (code - 1)) == 0) {
+				if (code > 1 && (code & (code - 1)) == 0) {
 					// We overflowed the current bit length by incrementing
 					++curLen;
 				}
