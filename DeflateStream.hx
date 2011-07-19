@@ -137,7 +137,7 @@ class DeflateStream
 				
 				// No lengths for now, just literals + EOB
 				var literalLengthTree = createLiteralLengthTree(bytes);
-				literalLengthLookup = literalLengthTree.toLookupTable();
+				literalLengthLookup = literalLengthTree.codes;
 				
 				// TODO: Write the trees into the stream as per RFC 1951
 			}
@@ -186,14 +186,14 @@ class DeflateStream
 	
 	private inline function createLiteralLengthTree(sampleData : ByteArray)
 	{
-		var alphabet = new Array<SymbolWeightPair>();
+		var weights = new Array<UInt>();
 		
 		for (value in 0 ... 256) {		// Literals
-			alphabet.push(new SymbolWeightPair(value, 10));
+			weights.push(10);
 		}
 		
 		// Weight EOB less than more common literals
-		alphabet.push(new SymbolWeightPair(256, 1));
+		weights.push(1);
 		
 		// No length codes yet
 		
@@ -203,13 +203,9 @@ class DeflateStream
 		if (sampleData.bytesAvailable <= 1024) {
 			// Small sample, calculate exactly
 			sampleFrequency = 1;
-			while (sampleData.bytesAvailable != 0) {
-				++alphabet[sampleData.readByte() & 0xFF].weight;
-			}
 		}
 		else if (sampleData.bytesAvailable <= 20 * 1024) {
 			sampleFrequency = 20;	// Sample every 20th byte
-			
 		}
 		else {
 			sampleFrequency = 30;
@@ -219,198 +215,231 @@ class DeflateStream
 		var samples = Math.floor(sampleData.bytesAvailable / sampleFrequency);
 		for (i in 0 ... samples) {
 			sampleData.position = oldPosition + i * sampleFrequency;
-			++alphabet[sampleData.readByte() & 0xFF].weight;
+			++weights[sampleData.readByte() & 0xFF];
 		}
 		
 		sampleData.position = oldPosition;
 		
-		return HuffmanTree.fromWeightedAlphabet(alphabet);
-	}
-}
-
-
-class SymbolWeightPair {
-	public var symbol : UInt;
-	public var weight : UInt;
-	
-	public function new(symbol : UInt, weight : UInt)
-	{
-		this.symbol = symbol;
-		this.weight = weight;
-	}
-}
-
-
-class HuffmanNode extends SymbolWeightPair {
-	public var left : HuffmanNode;
-	public var right : HuffmanNode;
-	public var lexicographicIndex : UInt;
-	
-	public function new(lexicographicIndex : UInt, symbol : UInt, weight : UInt)
-	{
-		super(symbol, weight);
-		
-		this.lexicographicIndex = lexicographicIndex;
-	}
-	
-	
-	public function height() : Int
-	{
-		if (left == null && right == null) {
-			return 0;
-		}
-		
-		var leftHeight = left == null ? -1 : left.height();
-		var rightHeight = right == null ? -1 : right.height();
-		
-		return Std.int(Math.max(leftHeight, rightHeight)) + 1;
+		return HuffmanTree.fromWeightedAlphabet(weights);
 	}
 }
 
 
 class HuffmanTree
 {
-	private var root : HuffmanNode;
+	// Each entry contains the code and the code length.
+	// The code is stored in the highest 16 bits, and the length in the lowest.
+	public var codes : Array<Int>;
+	
 	
 	private function new()
 	{
 	}
 	
-	public static function fromWeightedAlphabet(alphabet : Array<SymbolWeightPair>) : HuffmanTree
+	// Creates a Huffman tree for the given weights. The symbols are assumed
+	// to be the integers 0...weights.length. Each weight must not exceed 16 bits.
+	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int = 15) : HuffmanTree
 	{
-		// TODO: Limit tree height to maxiumum 15 (i.e. codelength 15)
+		var codelens = new Array<Int>();
 		
+		// First, copy the weights and generate their corresponding symbols
+		// The symbols will be stored in the upper 16 bits.
+		for (i in 0 ... weights.length) {
+			codelens[i] = (i << 16) | weights[i];
+		}
+		
+		// Sort by weight non-decreasing
+		codelens.sort(function (a, b) return (a & 0xFFFF) - (b & 0xFFFF));
+		
+		// Calculate unrestricted code lengths
+		calculateOptimalCodeLengths(codelens);
+		
+		// Restrict code lengths
+		limitCodeLengths(codelens, maxCodeLength);
+		
+		// Sort by code length, then by symbol (both decreasing)
+		// TODO: codelens are already sorted (or nearly, if some codelengths were limited), but
+		// symbols are in increasing order for equal bitlengths. Using a custom insertion sort
+		// may be faster.
+		// See http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
+		codelens.sort(function (a, b) {
+			var result = (b & 0xFFFF) - (a & 0xFFFF);
+			if (result == 0) {
+				result = (b >>> 16) - (a >>> 16);
+			}
+			
+			return result;
+		});
+		
+		// Calculate the actual codes (canonical Huffman tree).
+		// Result is stored in lookup table (by symbol)
+		var codes = calculateCanonicalCodes(codelens);
 		
 		var tree = new HuffmanTree();
-		if (alphabet.length == 0) {
-			tree.root = new HuffmanNode(null, null, null);
-			return tree;
-		}
-		
-		
-		var pool = new Array<HuffmanNode>();
-		for (i in 0 ... alphabet.length) {
-			var entry = alphabet[i];
-			pool.push(new HuffmanNode(i, entry.symbol, entry.weight));
-		}
-		
-		if (pool.length == 1) {
-			tree.root = new HuffmanNode(null, null, null);
-			tree.root.left = pool.pop();
-			return tree;
-		}
-		
-		while (pool.length != 1) {
-			var lowest = pool[0];
-			var secondLowest = pool[1];
-			
-			if (precedesByWeight(secondLowest, lowest)) {
-				secondLowest = pool[0];
-				lowest = pool[1];
-			}
-			
-			for (i in 2 ... pool.length) {
-				if (precedesByWeight(pool[i], lowest)) {
-					secondLowest = lowest;
-					lowest = pool[i];
-				}
-				else if (precedesByWeight(pool[i], secondLowest)) {
-					secondLowest = pool[i];
-				}
-			}
-			
-			pool.remove(lowest);
-			pool.remove(secondLowest);
-			
-			var combined = new HuffmanNode(
-				lowest.lexicographicIndex,
-				null,
-				lowest.weight + secondLowest.weight
-			);
-			
-			var lHeight = lowest.height();
-			var l2Height = secondLowest.height();
-			if (lHeight < l2Height || lHeight == l2Height && lowest.lexicographicIndex < secondLowest.lexicographicIndex) {
-				combined.left = lowest;
-				combined.right = secondLowest;
-			}
-			else {
-				combined.left = secondLowest;
-				combined.right = lowest;
-			}
-			
-			pool.push(combined);
-		}
-		
-		tree.root = pool.pop();
+		tree.codes = codes;
 		return tree;
 	}
 	
 	
-	// Each entry in the table contains the code and the code length.
-	// The code is stored in the lowest 16 bits, and the length in the highest.
-	public function toLookupTable() : Array<UInt>
+	// Transforms weights into a correspondingt list of code lengths
+	private static function calculateOptimalCodeLengths(weights : Array<Int>)
 	{
-		var table = new Array<UInt>();
-		if (root.left == null && root.right == null) {
-			return table;		// Empty tree, no leaves
+		var n  = weights.length;
+		var A = weights;			// Alias
+		
+		// Uses Moffat's in-place algorithm for calculating the unrestricted Huffman code lengths
+		// Adapted from http://ww2.cs.mu.oz.au/~alistair/inplace.c
+		var root;                  /* next root node to be used */
+        var leaf;                  /* next leaf to be used */
+        var next;                  /* next value to be assigned */
+        var avbl;                  /* number of available nodes */
+        var used;                  /* number of internal nodes */
+        var dpth;                  /* current depth of leaves */
+
+        /* check for pathological cases */
+        if (n!=0) {
+			if (n != 1) {
+				/* first pass, left to right, setting parent pointers */
+				setLow16(A, 0, getLow16(A, 0) + getLow16(A, 1));
+				root = 0; leaf = 2; next = 1;
+				while (next < n-1) {
+					/* select first item for a pairing */
+					if (leaf>=n || getLow16(A, root) < getLow16(A, leaf)) {
+						setLow16(A, next, getLow16(A, root));
+						setLow16(A, root++, next);
+					} else {
+						setLow16(A, next, getLow16(A, leaf++));
+					}
+
+					/* add on the second item */
+					if (leaf>=n || (getLow16(A, root) < getLow16(A, leaf))) {
+						setLow16(A, next, getLow16(A, root));
+						setLow16(A, root++, next);
+					} else {
+						setLow16(A, next, getLow16(A, leaf++));
+					}
+					
+					++next;
+				}
+				
+				/* second pass, right to left, setting internal depths */
+				setLow16(A, n - 2, 0);
+				next = n - 3;
+				while (next>=0) {
+					setLow16(A, next, getLow16(A, getLow16(A, next)) + 1);
+					--next;
+				}
+
+				/* third pass, right to left, setting leaf depths */
+				avbl = 1; used = dpth = 0; root = n-2; next = n-1;
+				while (avbl>0) {
+					while (root>=0 && getLow16(A, root)==dpth) {
+						++used; --root;
+					}
+					while (avbl>used) {
+						setLow16(A, next--, dpth);
+						--avbl;
+					}
+					avbl = 2*used; ++dpth; used = 0;
+				}
+			}
+			else {		// n == 1
+				setLow16(A, 0, 0);
+			}
+		}
+	}
+	
+	
+	private static inline function getLow16(a : Array<Int>, i : Int) : Int
+	{
+		return a[i] & 0xFFFF;
+	}
+	
+	private static inline function setLow16(a : Array<Int>, i : Int, v : Int)
+	{
+		a[i] = (a[i] & 0xFFFF0000) | v;
+	}
+	
+	
+	private static inline function limitCodeLengths(codelens : Array<Int>, max : Int)
+	{
+		// Uses (non-optimal) heuristic algorithm described at http://cbloomrants.blogspot.com/2010/07/07-03-10-length-limitted-huffman-codes.html
+		
+		// Assumes codelens is sorted in non-decreasing order by weight
+		
+		var overflow = false;
+		
+		// Set code lengths > max to max
+		for (i in 0 ... codelens.length) {
+			if ((codelens[i] & 0xFFFF) > max) {
+				setLow16(codelens, i, max);
+				overflow = true;
+			}
 		}
 		
-		var nodeStack = new Array<HuffmanNode>();
-		var pathStack = new Array<UInt>();
-		var pathLengthStack = new Array<UInt>();
-		
-		nodeStack.push(root);
-		pathStack.push(0);
-		pathLengthStack.push(0);
-		
-		while (nodeStack.length != 0) {
-			var current = nodeStack.pop();
-			var path = pathStack.pop();
-			var pathLength = pathLengthStack.pop();
-			
-			if (current.left == null && current.right == null) {
-				// Leaf node (i.e. symbol)
-				table[current.symbol] = pathLength << 16 | path;
+		if (overflow) {
+			// Calculate Kraft number
+			var K = 0.0;
+			for (i in 0 ... codelens.length) {
+				K += Math.pow(2, -getLow16(codelens, i));
 			}
-			else {
-				pathLengthStack.push(pathLength + 1);
+			
+			// Pass 1
+			var i = 0;
+			while (getLow16(codelens, i) < max && K > 1 ) {
+				++codelens[i];		// Only affects lower 16 bits
 				
-				if (current.right != null) {
-					pathStack.push((path << 1) | 1);
-					nodeStack.push(current.right);
+				// adjust K for change in codeLen
+				K -= Math.pow(2, -getLow16(codelens, i));
+				
+				if (getLow16(codelens, i) == max) {
+					++i;
 				}
-				if (current.left != null) {
-					pathStack.push(path << 1);
-					nodeStack.push(current.left);
+			}
+			
+			// Pass 2
+			i = codelens.length - 1;
+			while (i >= 0) {
+				while ((K + Math.pow(2, -getLow16(codelens, i))) <= 1) {
+					// adjust K for change in codeLen
+					K += Math.pow(2, -getLow16(codelens, i));
+					
+					--codelens[i];		// Only affects lower 16 bits
 				}
+				
+				--i;
+			}
+		}
+	}
+	
+	
+	// Input is expected to be in sorted order, first by code length (decreasing), then by symbol (decreasing)
+	private static inline function calculateCanonicalCodes(codelens : Array<Int>) : Array<Int>
+	{
+		// Implements algorithm found on Wikipedia: http://en.wikipedia.org/wiki/Canonical_Huffman_code
+		
+		var table = new Array<Int>();
+		if (codelens.length != 0) {
+			// Iterate over symbols in reverse order (i.e. increasing codelength)
+			var i = codelens.length - 1;
+			var code = 0;
+			var curLen = codelens[i] & 0xFFFF;
+			while (i >= 0) {
+				var s = codelens[i];
+				var newLen = s & 0xFFFF;
+				code <<= newLen - curLen;
+				table[s >>> 16] = (code << 16) | newLen;
+				++code;
+				curLen = newLen;
+				if ((code & (code - 1)) == 0) {
+					// We overflowed the current bit length by incrementing
+					++curLen;
+				}
+				
+				--i;
 			}
 		}
 		
 		return table;
 	}
-	
-	
-	public inline function height() : Int
-	{
-		return root.height();
-	}
-	
-	
-	private static inline function precedesByWeight(node1, node2)
-	{
-		return
-			node1.weight < node2.weight ||
-			node1.weight == node2.weight && node1.lexicographicIndex < node2.lexicographicIndex
-		;
-	}
 }
-
-
-
-
-
-
-
-
-
