@@ -52,6 +52,10 @@ class DeflateStream
 	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
 	
 	private static inline var ADDLER_MAX : UInt = 65521;		// Largest prime smaller than 65536
+	private static inline var MAX_CODE_LENGTH : UInt = 15;
+	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : UInt = 7;
+	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
+	private static inline var EOB = 256;		// End of block symbol
 	
 	private var level : CompressionLevel;
 	private var zlib : Bool;
@@ -63,7 +67,12 @@ class DeflateStream
 	private var s2 : UInt;
 	
 	private var literalLengthLookup : Array<Int>;
-	private static var distanceLookup : Array<Int>;
+	private var distanceLookup : Array<Int>;
+	
+	private var bitBuffer : UInt;
+	private var bitBufferLength : Int;
+	
+	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
 	
 	
 	public function new(level : CompressionLevel, writeZLIBInfo = false)
@@ -98,6 +107,9 @@ class DeflateStream
 	{
 		freshBlock = true;
 		
+		bitBuffer = 0;
+		bitBufferLength = 0;
+		
 		if (level == CompressionLevel.UNCOMPRESSED) {
 			stream.writeByte(lastBlock ? 1 : 0);		// Uncompressed
 		}
@@ -109,7 +121,7 @@ class DeflateStream
 	
 	// Updates the current block with the compressed representation of bytes
 	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
-	public inline function update(bytes : ByteArray)
+	public function update(bytes : ByteArray)
 	{
 		if (level == CompressionLevel.UNCOMPRESSED) {
 			var len = Std.int(Math.min(bytes.bytesAvailable, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
@@ -134,7 +146,7 @@ class DeflateStream
 		}
 		else {
 			if (freshBlock) {
-				// Write Huffman trees
+				// Write Huffman trees into the stream as per RFC 1951
 				
 				var literalLengthTree = createLiteralLengthTree(bytes);
 				literalLengthLookup = literalLengthTree.codes;
@@ -144,10 +156,57 @@ class DeflateStream
 					distanceLookup = distanceTree.codes;
 				}
 				
-				// TODO: Write the trees into the stream as per RFC 1951
+				var codeLengthLookup = createCodeLengthTree(literalLengthLookup, distanceLookup).codes;
+				
+				// HLIT
+				writeBits(literalLengthLookup.length - 257, 5);
+				
+				// HDIST
+				if (distanceLookup.length == 0) {
+					writeBits(0, 5);		// Minimum one distance code
+				}
+				else {
+					writeBits(distanceLookup.length - 1, 5);
+				}
+				
+				// HCLEN
+				writeBits(codeLengthLookup.length - 4, 4);
+				
+				// Write code lengths of code length code
+				for (rank in CODE_LENGTH_ORDER) {
+					writeBits(codeLengthLookup[rank] & 0xFFFF, 3);
+				}
+				
+				// Write (compressed) code lengths of literal/length codes
+				for (code in literalLengthLookup) {
+					writeSymbol(code, codeLengthLookup);
+				}
+				
+				// Write (compressed) code lengths of distance codes
+				if (distanceLookup.length == 0) {
+					writeSymbol(0, codeLengthLookup);
+				}
+				else {
+					for (code in distanceLookup) {
+						writeSymbol(code, codeLengthLookup);
+					}
+				}
 			}
 			
-			// TODO
+			// TODO: Use LZ77 (depending on compression settings)
+			
+			// Write data
+			var byte : UInt;
+			for (i in 0 ... bytes.bytesAvailable) {
+				byte = bytes.readByte() & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
+				
+				if (zlib) {
+					s1 = (s1 + byte) % ADDLER_MAX;
+					s2 = (s2 + s1) % ADDLER_MAX;
+				}
+				
+				writeSymbol(byte, literalLengthLookup);
+			}
 		}
 		
 		freshBlock = false;
@@ -157,15 +216,29 @@ class DeflateStream
 	public inline function endBlock()
 	{
 		if (level != UNCOMPRESSED) {
-			// TODO: Write end of block symbol
+			writeSymbol(EOB, literalLengthLookup);
 		}
+	}
+	
+	
+	public inline function writeEmptyBlock(lastBlock : Bool)
+	{
+		var currentLevel = level;
+		level = UNCOMPRESSED;
+		writeBlock(new ByteArray(), lastBlock);
+		level = currentLevel;
 	}
 	
 	
 	// Call only once. After called, no other methods can be called
 	public inline function finalize() : ByteArray
 	{
-		// TODO: Flush stream (pad with zero bits until next byte boundary)
+		// Flush stream
+		while (bitBufferLength > 0) {
+			stream.writeByte(bitBuffer & 0xFF);
+			bitBuffer >>= 8;
+			bitBufferLength -= 8;
+		}
 		
 		if (zlib) {
 			stream.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
@@ -180,16 +253,34 @@ class DeflateStream
 	
 	
 	
-	
-	
-	// Writes up to 8 bits into the stream
+	// Writes up to 32 bits into the stream (bits must be zero-padded)
 	private inline function writeBits(bits : UInt, bitCount : UInt)
 	{
-		// TODO
+		// TODO: Optimize by removing the if -- instead of buffering in int,
+		// just use fast memory directly.
+		
+		bitBuffer |= bits << bitBufferLength;
+		bitBufferLength += bitCount;
+		
+		
+		if (bitBufferLength >= 32) {
+			bitBufferLength -= 32;
+			stream.writeByte(bitBuffer & 0xFF);
+			stream.writeByte((bitBuffer >>> 8) & 0xFF);
+			stream.writeByte((bitBuffer >>> 16) & 0xFF);
+			stream.writeByte((bitBuffer >>> 24) & 0xFF);
+			bitBuffer = bits >>> (bitCount - bitBufferLength);
+		}
+	}
+	
+	private inline function writeSymbol(symbol : Int, lookup : Array<Int>)
+	{
+		var compressed = lookup[symbol & 0xFFFF];		// For codes, gets codelength. All symbols are <= 2 bytes
+		writeBits(compressed >>> 16, compressed & 0xFFFF);
 	}
 	
 	
-	private static inline function createLiteralLengthTree(sampleData : ByteArray)
+	private static function createLiteralLengthTree(sampleData : ByteArray)
 	{
 		// No lengths for now, just literals + EOB
 		
@@ -227,7 +318,7 @@ class DeflateStream
 		
 		sampleData.position = oldPosition;
 		
-		return HuffmanTree.fromWeightedAlphabet(weights);
+		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH);
 	}
 	
 	
@@ -237,7 +328,26 @@ class DeflateStream
 		
 		// No distances yet
 		
-		return HuffmanTree.fromWeightedAlphabet(weights);
+		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH);
+	}
+	
+	
+	private static inline function createCodeLengthTree(literalLengthLookup : Array<Int>, distanceLookup : Array<Int>)
+	{
+		var weights = new Array<UInt>();
+		
+		for (len in 0 ... 19) {
+			weights.push(1);
+		}
+		
+		for (code in literalLengthLookup) {
+			++weights[code & 0xFFFF];
+		}
+		for (code in distanceLookup) {
+			++weights[code & 0xFFFF];
+		}
+		
+		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH_CODE_LENGTH);
 	}
 }
 
@@ -246,6 +356,8 @@ class HuffmanTree
 {
 	// Each entry contains the code and the code length.
 	// The code is stored in the highest 16 bits, and the length in the lowest.
+	// The code's bits are reversed (RFC 1951 says Hiffman codes get packed in
+	// reverse order).
 	public var codes : Array<Int>;
 	
 	
@@ -255,7 +367,7 @@ class HuffmanTree
 	
 	// Creates a Huffman tree for the given weights. The symbols are assumed
 	// to be the integers 0...weights.length. Each weight must not exceed 16 bits.
-	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int = 15) : HuffmanTree
+	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int) : HuffmanTree
 	{
 		var codelens = new Array<Int>();
 		
@@ -378,7 +490,7 @@ class HuffmanTree
 	}
 	
 	
-	private static inline function limitCodeLengths(codelens : Array<Int>, max : Int)
+	private static function limitCodeLengths(codelens : Array<Int>, max : Int)
 	{
 		// Uses (non-optimal) heuristic algorithm described at http://cbloomrants.blogspot.com/2010/07/07-03-10-length-limitted-huffman-codes.html
 		
@@ -445,10 +557,10 @@ class HuffmanTree
 				var s = codelens[i];
 				var newLen = s & 0xFFFF;
 				code <<= newLen - curLen;
-				table[s >>> 16] = (code << 16) | newLen;
+				table[s >>> 16] = (reverseBits(code, newLen) << 16) | newLen;
 				++code;
 				curLen = newLen;
-				if (code > 1 && (code & (code - 1)) == 0) {
+				if (code >= (1 << curLen)) {
 					// We overflowed the current bit length by incrementing
 					++curLen;
 				}
@@ -458,5 +570,26 @@ class HuffmanTree
 		}
 		
 		return table;
+	}
+	
+	
+	// Reverses count bits of v and returns the result (just the reversed bits)
+	// Count must be <= 16 (i.e. max 2 bytes)
+	private static function reverseBits(v : UInt, count : UInt) : UInt
+	{
+		// From http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel
+		
+		// swap odd and even bits
+		v = ((v >>> 1) & 0x55555555) | ((v & 0x55555555) << 1);
+		// swap consecutive pairs
+		v = ((v >>> 2) & 0x33333333) | ((v & 0x33333333) << 2);
+		// swap nibbles ... 
+		v = ((v >>> 4) & 0x0F0F0F0F) | ((v & 0x0F0F0F0F) << 4);
+		// swap bytes
+		v = ((v >>> 8) & 0x00FF00FF) | ((v & 0x00FF00FF) << 8);
+		
+		// Because 2-byte blocks were not swapped, result is in lower word
+		
+		return (v & 0xFFFF) >>> (16 - count);
 	}
 }

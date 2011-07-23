@@ -295,15 +295,8 @@ class OptimizedPNGEncoder
 	
 	private static inline function compress(bytes : ByteArray)
 	{
-		var stream = new DeflateStream(CompressionLevel.UNCOMPRESSED, true);
-		
-		while (bytes.bytesAvailable > 0) {
-			stream.writeBlock(bytes);
-		}
-		
-		// Write final block (easier than figuring out if last block was last in advance)
-		stream.writeBlock(new ByteArray(), true);
-		
+		var stream = new DeflateStream(CompressionLevel.FAST, true);
+		stream.writeBlock(bytes, true);
 		return stream.finalize();
 	}
 }
