@@ -73,6 +73,56 @@ class DeflateStreamTests
 	}
 	
 	
+	private static function testSimpleZlibCompression()
+	{
+		// Arrange
+		var bytes = new ByteArray();
+		bytes.writeByte(1);
+		bytes.writeByte(2);
+		bytes.writeByte(3);
+		
+		bytes.position = 0;
+		
+		var stream = new DeflateStream(FAST, true);
+		
+		// Act
+		stream.writeBlock(bytes, true);
+		var result = stream.finalize();
+		result.uncompress();
+		
+		// Assert
+		assert(result.readByte() & 0xFF == 1);
+		assert(result.readByte() & 0xFF == 2);
+		assert(result.readByte() & 0xFF == 3);
+		assert(result.bytesAvailable == 0);
+	}
+	
+	
+	private static function testUncompressedCompression()
+	{
+		// Arrange
+		var bytes = new ByteArray();
+		bytes.writeByte(1);
+		bytes.writeByte(2);
+		bytes.writeByte(3);
+		
+		bytes.position = 0;
+		
+		var stream = new DeflateStream(UNCOMPRESSED, true);
+		
+		// Act
+		stream.writeBlock(bytes, true);
+		var result = stream.finalize();
+		result.uncompress();
+		
+		// Assert
+		assert(result.readByte() & 0xFF == 1);
+		assert(result.readByte() & 0xFF == 2);
+		assert(result.readByte() & 0xFF == 3);
+		assert(result.bytesAvailable == 0);
+	}
+	
+	
 	private static function assert(condition, message = "Assertion failed")
 	{
 		if (!condition) {
