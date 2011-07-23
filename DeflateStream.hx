@@ -235,7 +235,7 @@ class DeflateStream
 	{
 		// Flush stream
 		while (bitBufferLength > 0) {
-			stream.writeByte(bitBuffer & 0xFF);
+			stream.writeByte(bitBuffer);
 			bitBuffer >>= 8;
 			bitBufferLength -= 8;
 		}
@@ -265,10 +265,10 @@ class DeflateStream
 		
 		if (bitBufferLength >= 32) {
 			bitBufferLength -= 32;
-			stream.writeByte(bitBuffer & 0xFF);
-			stream.writeByte((bitBuffer >>> 8) & 0xFF);
-			stream.writeByte((bitBuffer >>> 16) & 0xFF);
-			stream.writeByte((bitBuffer >>> 24) & 0xFF);
+			stream.writeByte(bitBuffer);
+			stream.writeByte(bitBuffer >>> 8);
+			stream.writeByte(bitBuffer >>> 16);
+			stream.writeByte(bitBuffer >>> 24);
 			bitBuffer = bits >>> (bitCount - bitBufferLength);
 		}
 	}
