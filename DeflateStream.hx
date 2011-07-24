@@ -44,6 +44,7 @@
 
 package;
 
+import flash.errors.ArgumentsError;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
 import flash.Vector;
@@ -292,7 +293,7 @@ class DeflateStream
 	}
 	
 	
-	private static function createLiteralLengthTree(sampleData : ByteArray)
+	private static inline function createLiteralLengthTree(sampleData : ByteArray)
 	{
 		// No lengths for now, just literals + EOB
 		
@@ -379,18 +380,46 @@ class HuffmanTree
 	
 	// Creates a Huffman tree for the given weights. The symbols are assumed
 	// to be the integers 0...weights.length. Each weight must not exceed 16 bits.
-	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int) : HuffmanTree
+	public static function fromWeightedAlphabet(weights : Array<UInt>, maxCodeLength : Int) : HuffmanTree
 	{
-		var codelens = new Array<Int>();
-		
-		// First, copy the weights and generate their corresponding symbols
-		// The symbols will be stored in the upper 16 bits.
-		for (i in 0 ... weights.length) {
-			codelens[i] = (i << 16) | weights[i];
+		if (maxCodeLength > 16) {
+			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");
 		}
 		
-		// Sort by weight non-decreasing
-		codelens.sort(function (a, b) return (a & 0xFFFF) - (b & 0xFFFF));
+		var codelens = new Array<Int>();
+		
+		if (weights.length > 0) {
+			// Make sure all weights fall between 0 and 65535
+			var minWeight = weights[0];
+			var maxWeight = weights[0];
+			
+			for (w in weights) {
+				if (w > maxWeight) {
+					maxWeight = w;
+				}
+				else if (w < minWeight) {
+					minWeight = w;
+				}
+			}
+			
+			// Copy the weights and generate their corresponding symbols
+			// The symbols will be stored in the upper 16 bits.
+			
+			if (maxWeight > 65535) {
+				var range : Float = maxWeight - minWeight;
+				for (i in 0 ... weights.length) {
+					codelens[i] = (i << 16) | (Std.int((weights[i] - minWeight) / range * 65534) & 0xFFFF);
+				}
+			}
+			else {
+				for (i in 0 ... weights.length) {
+					codelens[i] = (i << 16) | (weights[i] & 0xFFFF);
+				}
+			}
+			
+			// Sort by weight non-decreasing
+			codelens.sort(function (a, b) return (a & 0xFFFF) - (b & 0xFFFF));
+		}
 		
 		// Calculate unrestricted code lengths
 		calculateOptimalCodeLengths(codelens);
@@ -503,7 +532,7 @@ class HuffmanTree
 	}
 	
 	
-	private static function limitCodeLengths(codelens : Array<Int>, max : Int)
+	private static inline function limitCodeLengths(codelens : Array<Int>, max : Int)
 	{
 		// Uses (non-optimal) heuristic algorithm described at http://cbloomrants.blogspot.com/2010/07/07-03-10-length-limitted-huffman-codes.html
 		
@@ -555,7 +584,7 @@ class HuffmanTree
 	
 	
 	// Input is expected to be in sorted order, first by code length (decreasing), then by symbol (decreasing)
-	private static function calculateCanonicalCodes(codelens : Array<Int>) : Array<Int>
+	private static inline function calculateCanonicalCodes(codelens : Array<Int>) : Array<Int>
 	{
 		// Implements algorithm found on Wikipedia: http://en.wikipedia.org/wiki/Canonical_Huffman_code
 		
@@ -587,7 +616,7 @@ class HuffmanTree
 	
 	// Reverses count bits of v and returns the result (just the reversed bits)
 	// Count must be <= 16 (i.e. max 2 bytes)
-	private static function reverseBits(v : UInt, count : UInt) : UInt
+	private static inline function reverseBits(v : UInt, count : UInt) : UInt
 	{
 		// From http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel
 		
