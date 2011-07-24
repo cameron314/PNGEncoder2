@@ -11,6 +11,9 @@ class DeflateStreamTests
 		testEmptyHuffmanTree();
 		testSimpleHuffmanTree();
 		testSimpleCompression();
+		testSimpleZlibCompression();
+		testUncompressedCompression();
+		testManyByteCompression();
 	}
 	
 	
@@ -119,6 +122,30 @@ class DeflateStreamTests
 		assert(result.readByte() & 0xFF == 1);
 		assert(result.readByte() & 0xFF == 2);
 		assert(result.readByte() & 0xFF == 3);
+		assert(result.bytesAvailable == 0);
+	}
+	
+	
+	private static function testManyByteCompression()
+	{
+		// Arrange
+		var bytes = new ByteArray();
+		for (i in 0 ... 44160) {		// Used to fail at >= 44160 (caused overflow)
+			bytes.writeByte(i);
+		}
+		bytes.position = 0;
+		
+		var stream = new DeflateStream(FAST, true);
+		
+		// Act
+		stream.writeBlock(bytes, true);
+		var result = stream.finalize();
+		result.uncompress();
+		
+		// Assert
+		for (i in 0 ... 44160) {
+			assert(result.readByte() & 0xFF == i & 0xFF);
+		}
 		assert(result.bytesAvailable == 0);
 	}
 	

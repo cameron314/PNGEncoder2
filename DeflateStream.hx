@@ -30,6 +30,18 @@
 	SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+
+// References:
+// - The standard zlib implementation (available from http://zlib.net/)
+// - RFC 1950 (zlib) and 1951 (DEFLATE)
+// - "An Explanation of the Deflate Algorithm" (http://www.zlib.net/feldspar.html)
+// - "Length-Limitted Huffman Codes" (http://cbloomrants.blogspot.com/2010/07/07-02-10-length-limitted-huffman-codes.html)
+// - "Length-Limitted Huffman Codes Heuristic" (http://cbloomrants.blogspot.com/2010/07/07-03-10-length-limitted-huffman-codes.html)
+// - A C implementation of an in-place Huffman code length generator (http://ww2.cs.mu.oz.au/~alistair/inplace.c)
+// - Reverse Parallel algorithm for reversing bits (http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel)
+// - Wikipedia article on canonical Huffman codes (http://en.wikipedia.org/wiki/Canonical_Huffman_code)
+// - http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
+
 package;
 
 import flash.utils.ByteArray;
@@ -356,7 +368,7 @@ class HuffmanTree
 {
 	// Each entry contains the code and the code length.
 	// The code is stored in the highest 16 bits, and the length in the lowest.
-	// The code's bits are reversed (RFC 1951 says Hiffman codes get packed in
+	// The code's bits are reversed (RFC 1951 says Huffman codes get packed in
 	// reverse order).
 	public var codes : Array<Int>;
 	
@@ -418,6 +430,7 @@ class HuffmanTree
 		
 		// Uses Moffat's in-place algorithm for calculating the unrestricted Huffman code lengths
 		// Adapted from http://ww2.cs.mu.oz.au/~alistair/inplace.c
+		
 		var root;                  /* next root node to be used */
         var leaf;                  /* next leaf to be used */
         var next;                  /* next value to be assigned */
@@ -458,7 +471,7 @@ class HuffmanTree
 					setLow16(A, next, getLow16(A, getLow16(A, next)) + 1);
 					--next;
 				}
-
+				
 				/* third pass, right to left, setting leaf depths */
 				avbl = 1; used = dpth = 0; root = n-2; next = n-1;
 				while (avbl>0) {
@@ -515,15 +528,14 @@ class HuffmanTree
 			
 			// Pass 1
 			var i = 0;
-			while (getLow16(codelens, i) < max && K > 1 ) {
-				++codelens[i];		// Only affects lower 16 bits
-				
-				// adjust K for change in codeLen
-				K -= Math.pow(2, -getLow16(codelens, i));
-				
-				if (getLow16(codelens, i) == max) {
-					++i;
+			while (K > 1 && i < codelens.length) {
+				while (getLow16(codelens, i) < max && K > 1) {
+					++codelens[i];		// Only affects lower 16 bits
+					
+					// adjust K for change in codeLen
+					K -= Math.pow(2, -getLow16(codelens, i));
 				}
+				++i;
 			}
 			
 			// Pass 2
