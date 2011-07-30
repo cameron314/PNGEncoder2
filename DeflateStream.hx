@@ -152,8 +152,9 @@ class DeflateStream
 	public inline function writeBlock(bytes : ByteArray, lastBlock = false)
 	{
 		beginBlock(lastBlock);
-		update(bytes);
+		var wroteAll = update(bytes);
 		endBlock();
+		return wroteAll;
 	}
 	
 	
@@ -161,8 +162,9 @@ class DeflateStream
 	public inline function fastWriteBlock(offset : UInt, end : UInt, lastBlock = false)
 	{
 		beginBlock(lastBlock);
-		fastUpdate(offset, end);
+		var wroteAll = fastUpdate(offset, end);
 		endBlock();
+		return wroteAll;
 	}
 	
 	
@@ -197,7 +199,7 @@ class DeflateStream
 		}
 		
 		memcpy(bytes, offset);
-		fastUpdate(offset, end);
+		return fastUpdate(offset, end);
 	}
 	
 	
@@ -206,6 +208,8 @@ class DeflateStream
 	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
 	public function fastUpdate(offset : UInt, end : UInt)
 	{
+		var wroteAll = true;
+		
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (level == CompressionLevel.UNCOMPRESSED) {
 			var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
@@ -221,7 +225,7 @@ class DeflateStream
 			}
 			
 			var byte : UInt;
-			for (i in offset ... end) {
+			for (i in offset ... offset + len) {
 				byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
 				
 				if (zlib) {
@@ -231,6 +235,8 @@ class DeflateStream
 				
 				writeByte(byte);
 			}
+			
+			wroteAll = (end - offset == len);
 		}
 		else {
 			var len = end - offset;
@@ -305,6 +311,8 @@ class DeflateStream
 		}
 		
 		freshBlock = false;
+		
+		return wroteAll;
 	}
 	
 	
@@ -320,7 +328,7 @@ class DeflateStream
 	{
 		var currentLevel = level;
 		level = UNCOMPRESSED;
-		writeBlock(new ByteArray(), lastBlock);
+		fastWriteBlock(0, 0, lastBlock);
 		level = currentLevel;
 	}
 	
