@@ -186,7 +186,7 @@ class DeflateStream
 		// Put input bytes into fast mem *after* a gap for output bytes.
 		// This allows multiple calls to update without needing to pre-delcare an input
 		// buffer big enough (i.e. streaming).
-		var offset = currentAddr + maxOutputBytes(bytes.bytesAvailable);
+		var offset = currentAddr + maxOutputBufferSize(bytes.bytesAvailable);
 		var end : UInt = offset + bytes.bytesAvailable;
 		
 		// Reserve space
@@ -235,8 +235,8 @@ class DeflateStream
 			var len = end - offset;
 			
 			// Make sure there's enough room in the output
-			if (maxOutputBytes(len) > mem.length - currentAddr) {
-				mem.length = maxOutputBytes(len) + currentAddr;
+			if (maxOutputBufferSize(len) > mem.length - currentAddr) {
+				mem.length = maxOutputBufferSize(len) + currentAddr;
 			}
 			
 			if (freshBlock) {
@@ -369,6 +369,17 @@ class DeflateStream
 	}
 	
 	
+	// Does not include SCRATCH_MEMORY_SIZE
+	public static inline function maxOutputBufferSize(uncompressedByteCount : UInt, blockCount = 1)
+	{
+		// Using Huffman compression with max 15 bits can't possibly
+		// exceed twice the uncompressed length. Margin of 300 includes
+		// header/footer data (think 285 length/literal codes at 7 bits max each),
+		//rounded up for good luck.
+		return uncompressedByteCount * 2 + 300 * blockCount;
+	}
+	
+	
 	
 	// Writes up to 32 bits into the stream (bits must be zero-padded)
 	private inline function writeBits(bits : UInt, bitCount : UInt)
@@ -472,15 +483,6 @@ class DeflateStream
 		}
 		
 		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH_CODE_LENGTH);
-	}
-	
-	
-	private static inline function maxOutputBytes(inputBytes : UInt)
-	{
-		// Using Huffman compression with max 15 bits can't possibly
-		// exceed twice the uncompressed length. Margin of 256 includes
-		// up to ~128 bytes of header/footer data, rounded up for good luck.
-		return inputBytes * 2 + 256;
 	}
 	
 	

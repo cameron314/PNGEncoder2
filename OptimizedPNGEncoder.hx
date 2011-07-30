@@ -155,19 +155,27 @@ class OptimizedPNGEncoder
 		
 		var bytesPerPixel = img.transparent ? 4 : 3;
 		
-		// Length of IDAT: 3 or 4 bytes per pixel + 1 byte per scanline
+		// Length of IDAT data: 3 or 4 bytes per pixel + 1 byte per scanline
 		var length : UInt = width * height * bytesPerPixel + height;
 		
 		// Size needed to store byte array of bitmap
 		var scratchSize : UInt = width * height * 4;
+		var totalScratchSize = scratchSize + DeflateStream.SCRATCH_MEMORY_SIZE;
 		
-		var IDAT:ByteArray = new ByteArray();		// IDAT + scratch at end
-		IDAT.length = Std.int(Math.max(length + scratchSize, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
-		Memory.select(IDAT);
+		// Memory layout:
+		// CHUNK_START: Deflated data (written last)
+		// CHUNK_START + deflated data buffer: scatch (raw image bytes)
+		// CHUNK_START + deflated data buffer + scratchSize: deflate scratch
+		// CHUNK_START + deflated data buffer + totalScratchSize: Uncompressed PNG-format image data
 		
+		data.length = Std.int(Math.max(CHUNK_START + DeflateStream.maxOutputBufferSize(length) + totalScratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		Memory.select(data);
 		
-		var addr : UInt = 0;
-		var scratchAddr = length;
+		var scratchAddrStart : UInt = CHUNK_START + DeflateStream.maxOutputBufferSize(length);
+		var addrStart : UInt = scratchAddrStart + totalScratchSize;
+		
+		var addr = addrStart;
+		var scratchAddr = scratchAddrStart;
 		
 		var imgBytes = img.getPixels(new Rectangle(0, 0, width, height));
 		imgBytes.position = 0;
@@ -203,19 +211,12 @@ class OptimizedPNGEncoder
 			}
 		}
 		
-		IDAT.length = length;
+		var deflateScratchAddrStart = scratchAddrStart + scratchSize;
+		var deflateStream = new DeflateStream(FAST, true, deflateScratchAddrStart, CHUNK_START);
+		deflateStream.fastWriteBlock(addrStart, addrStart + length, true);
+		var range = deflateStream.fastFinalize();
 		
-		IDAT.position = 0;
-		IDAT = compress(IDAT);
-		
-		var chunkLength = IDAT.length;
-		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
-		Memory.select(data);
-		
-		IDAT.position = 0;
-		memcpy(IDAT, CHUNK_START);
-		
-		return chunkLength;
+		return range.len();
 	}
 	
 	
@@ -228,7 +229,7 @@ class OptimizedPNGEncoder
 		png.writeUnsignedInt(type);
 		if (len != 0) {
 			data.position = CHUNK_START;
-			data.readBytes(png, png.position);
+			data.readBytes(png, png.position, chunkLength);
 			png.position += len;
 		}
 		
@@ -286,18 +287,6 @@ class OptimizedPNGEncoder
 	private static inline function crcTable(index : UInt) : UInt
 	{
 		return Memory.getI32((index & 0xFF) << 2);
-	}
-	
-	
-	
-	
-	
-	
-	private static inline function compress(bytes : ByteArray)
-	{
-		var stream = new DeflateStream(CompressionLevel.FAST, true);
-		stream.writeBlock(bytes, true);
-		return stream.finalize();
 	}
 }
 
