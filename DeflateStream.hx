@@ -61,6 +61,21 @@ enum CompressionLevel {
 }
 
 
+class MemoryRange {
+	public var offset : UInt;
+	public var end : UInt;
+	
+	public function new(offset : UInt, end : UInt)
+	{
+		this.offset = offset;
+		this.end = end;
+	}
+	
+	public inline function len() { return end - offset; }
+}
+
+
+
 // Compliant with RFC 1950 (ZLIB) and RFC 1951 (DEFLATE)
 class DeflateStream
 {
@@ -309,8 +324,30 @@ class DeflateStream
 	}
 	
 	
-	// Call only once. After called, no other methods can be called
+	// Call only once. After called, no other methods should be called
 	public inline function finalize() : ByteArray
+	{
+		var range = fastFinalize();
+		
+		var result = new ByteArray();
+		if (zlib) {
+			result.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
+		}
+		else {
+			result.endian = LITTLE_ENDIAN;
+		}
+		
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		mem.position = range.offset;
+		mem.readBytes(result, 0, range.len());
+		
+		result.position = 0;
+		return result;
+	}
+	
+	
+	// Call only once. After called, no other methods should be called
+	public inline function fastFinalize() : MemoryRange
 	{
 		// Flush stream
 		while (bitBufferLength > 0) {
@@ -328,21 +365,7 @@ class DeflateStream
 			writeByte(s1);
 		}
 		
-		
-		var result = new ByteArray();
-		if (zlib) {
-			result.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
-		}
-		else {
-			result.endian = LITTLE_ENDIAN;
-		}
-		
-		var mem = ApplicationDomain.currentDomain.domainMemory;
-		mem.position = startAddr;
-		mem.readBytes(result, 0, currentAddr - startAddr);
-		
-		result.position = 0;
-		return result;
+		return new MemoryRange(startAddr, currentAddr);
 	}
 	
 	
@@ -384,7 +407,7 @@ class DeflateStream
 	}
 	
 	
-	private static function createLiteralLengthTree(offset : UInt, end : UInt)
+	private static inline function createLiteralLengthTree(offset : UInt, end : UInt)
 	{
 		// No lengths for now, just literals + EOB
 		
