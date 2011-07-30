@@ -45,6 +45,7 @@
 package;
 
 import flash.errors.ArgumentsError;
+import flash.Lib;
 import flash.Memory;
 import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
