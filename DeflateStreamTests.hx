@@ -1,6 +1,8 @@
 package;
 
 import DeflateStream;
+import flash.Memory;
+import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
 
 
@@ -8,12 +10,15 @@ class DeflateStreamTests
 {
 	public static function run()
 	{
+		testBufferResize();
 		testEmptyHuffmanTree();
 		testSimpleHuffmanTree();
 		testSimpleCompression();
 		testSimpleZlibCompression();
 		testUncompressedCompression();
 		testManyByteCompression();
+		testIntegerOverflow();
+		testBufferOverflow();
 	}
 	
 	
@@ -149,6 +154,57 @@ class DeflateStreamTests
 		assert(result.bytesAvailable == 0);
 	}
 	
+	
+	private static function testIntegerOverflow()
+	{
+		// Arrange
+		var i = 0xFFFFFFFF;		// 32-bit int max
+		
+		// Act
+		++i;
+		
+		// Assert
+		assert(i == 0);
+	}
+	
+	
+	private static function testBufferOverflow()
+	{
+		// Arrange
+		var bytes = new ByteArray();
+		bytes.length = ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH;
+		Memory.select(bytes);
+		
+		// Act
+		try {
+			Memory.setByte(ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH + 99, 0xCC);
+		}
+		catch (e : Dynamic) {
+			// Assert
+			assert(bytes.length == ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH);
+			return;
+		}
+		
+		assert(false, "Exception was expected");
+	}
+	
+	
+	private static function testBufferResize()
+	{
+		// Arrange
+		var bytes = new ByteArray();
+		bytes.length = ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH;
+		Memory.select(bytes);
+		
+		// Act
+		bytes.length += 32536;
+		Memory.setByte(ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH + 32535, 0xCC);
+		
+		// Assert
+		var newLength : UInt = ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH + 32536;
+		assert(ApplicationDomain.currentDomain.domainMemory.length == newLength);
+		assert(Memory.getByte(ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH + 32535) == 0xCC);
+	}
 	
 	private static function assert(condition, message = "Assertion failed")
 	{

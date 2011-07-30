@@ -45,6 +45,8 @@
 package;
 
 import flash.errors.ArgumentsError;
+import flash.Memory;
+import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
 import flash.Vector;
@@ -63,6 +65,7 @@ enum CompressionLevel {
 class DeflateStream
 {
 	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
+	public static inline var SCRATCH_MEMORY_SIZE : UInt = 512 * 4;		// Bytes
 	
 	private static inline var ADDLER_MAX : UInt = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : UInt = 15;
@@ -72,7 +75,9 @@ class DeflateStream
 	
 	private var level : CompressionLevel;
 	private var zlib : Bool;
-	private var stream : ByteArray;
+	private var startAddr : UInt;
+	private var currentAddr : Int;
+	private var scratchAddr : Int;
 	private var freshBlock : Bool;
 	
 	// For calculating Adler-32 sum
@@ -88,21 +93,41 @@ class DeflateStream
 	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
 	
 	
-	public function new(level : CompressionLevel, writeZLIBInfo = false)
+	// If scratchAddr and startAddr are set, that signifies that memory has already been selected
+	// outside of this DeflateStream, for use with it. Up to SCRATCH_MEMORY_SIZE
+	// bytes will be used at scratchAddr. If scratchAddr is not given, then no manual
+	// memory management is required.
+	public function new(level : CompressionLevel, writeZLIBInfo = false, scratchAddr = -1, startAddr = 0)
 	{
 		this.level = level;
 		this.zlib = writeZLIBInfo;
 		
-		stream = new ByteArray();
-		stream.endian = LITTLE_ENDIAN;		// See RFC 1951
+		if (scratchAddr < 0) {
+			scratchAddr = 0;
+			startAddr = SCRATCH_MEMORY_SIZE;
+			var mem = new ByteArray();
+			mem.length = ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH;
+			Memory.select(mem);
+		}
+		
+		this.scratchAddr = scratchAddr;
+		this.startAddr = startAddr;
+		this.currentAddr = startAddr;
+		
+		// Ensure at least 3 bytes for possible zlib data and block header bits
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		var minLength : UInt = startAddr + 3;
+		if (mem.length < minLength) {
+			mem.length  = minLength;
+		}
 		
 		freshBlock = false;
 		s1 = 1;
 		s2 = 0;
 		
 		if (zlib) {
-			stream.writeByte(0x78);		// CMF with compression method 8 (deflate) 32K sliding window
-			stream.writeByte(0x9C);		// FLG: Check bits, no dict, default algorithm
+			writeByte(0x78);		// CMF with compression method 8 (deflate) 32K sliding window
+			writeByte(0x9C);		// FLG: Check bits, no dict, default algorithm
 		}
 	}
 	
@@ -124,7 +149,7 @@ class DeflateStream
 		bitBufferLength = 0;
 		
 		if (level == CompressionLevel.UNCOMPRESSED) {
-			stream.writeByte(lastBlock ? 1 : 0);		// Uncompressed
+			writeByte(lastBlock ? 1 : 0);		// Uncompressed
 		}
 		else {
 			writeBits(4 | (lastBlock ? 1 : 0), 3);		// Dynamic Huffman tree compression
@@ -136,13 +161,18 @@ class DeflateStream
 	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
 	public function update(bytes : ByteArray)
 	{
+		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (level == CompressionLevel.UNCOMPRESSED) {
 			var len = Std.int(Math.min(bytes.bytesAvailable, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
 			
+			if (len + 8 > mem.length - currentAddr) {
+				mem.length += len + 8;
+			}
+			
 			if (freshBlock) {
 				// Write uncompressed header info
-				stream.writeShort(len);
-				stream.writeShort(~len);
+				writeShort(len);
+				writeShort(~len);
 			}
 			
 			var byte : UInt;
@@ -154,10 +184,18 @@ class DeflateStream
 					s2 = (s2 + s1) % ADDLER_MAX;
 				}
 				
-				stream.writeByte(byte);
+				writeByte(byte);
 			}
 		}
 		else {
+			// Make sure there's enough room in the output
+			// Using Huffman compression with max 15 bits can't possibly
+			// exceed twice the uncompressed length. Margin of 256 includes
+			// up to ~128 bytes of header/footer data, rounded up for good luck.
+			if (bytes.bytesAvailable * 2 + 256 > mem.length - currentAddr) {
+				mem.length = bytes.bytesAvailable * 2 + 256 + currentAddr;
+			}
+			
 			if (freshBlock) {
 				// Write Huffman trees into the stream as per RFC 1951
 				
@@ -248,20 +286,35 @@ class DeflateStream
 	{
 		// Flush stream
 		while (bitBufferLength > 0) {
-			stream.writeByte(bitBuffer);
+			writeByte(bitBuffer);
 			bitBuffer >>= 8;
 			bitBufferLength -= 8;
 		}
 		
 		if (zlib) {
-			stream.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
-			
-			var adlerSum = (s2 << 16) | s1;
-			stream.writeUnsignedInt(adlerSum);
+			// Write Adler-32 sum in big endian order
+			// adlerSum = (s2 << 16) | s1;
+			writeByte(s2 >>> 8);
+			writeByte(s2);
+			writeByte(s1 >>> 8);
+			writeByte(s1);
 		}
 		
-		stream.position = 0;
-		return stream;
+		
+		var result = new ByteArray();
+		if (zlib) {
+			result.endian = BIG_ENDIAN;		// Network byte order (RFC 1950)
+		}
+		else {
+			result.endian = LITTLE_ENDIAN;
+		}
+		
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		mem.position = startAddr;
+		mem.readBytes(result, 0, currentAddr - startAddr);
+		
+		result.position = 0;
+		return result;
 	}
 	
 	
@@ -278,12 +331,22 @@ class DeflateStream
 		
 		if (bitBufferLength >= 32) {
 			bitBufferLength -= 32;
-			stream.writeByte(bitBuffer);
-			stream.writeByte(bitBuffer >>> 8);
-			stream.writeByte(bitBuffer >>> 16);
-			stream.writeByte(bitBuffer >>> 24);
+			Memory.setI32(currentAddr, bitBuffer);
+			currentAddr += 4;
 			bitBuffer = bits >>> (bitCount - bitBufferLength);
 		}
+	}
+	
+	private inline function writeByte(byte : UInt)
+	{
+		Memory.setByte(currentAddr, byte);
+		++currentAddr;
+	}
+	
+	private inline function writeShort(num : UInt)
+	{
+		Memory.setI16(currentAddr, num);
+		currentAddr += 2;
 	}
 	
 	private inline function writeSymbol(symbol : Int, lookup : Array<Int>)
