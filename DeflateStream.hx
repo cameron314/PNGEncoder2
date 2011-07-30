@@ -132,11 +132,20 @@ class DeflateStream
 	}
 	
 	
-	// Helper method. Same as sequentially calling BeginBlock, Update, and EndBlock
+	// Helper method. Same as sequentially calling beginBlock, update, and endBlock
 	public inline function writeBlock(bytes : ByteArray, lastBlock = false)
 	{
 		beginBlock(lastBlock);
 		update(bytes);
+		endBlock();
+	}
+	
+	
+	// Helper method. Same as sequentially calling beginBlock, fastUpdate, and endBlock
+	public inline function fastWriteBlock(offset : UInt, end : UInt, lastBlock = false)
+	{
+		beginBlock(lastBlock);
+		fastUpdate(offset, end);
 		endBlock();
 	}
 	
@@ -157,13 +166,33 @@ class DeflateStream
 	}
 	
 	
-	// Updates the current block with the compressed representation of bytes
+	public inline function update(bytes : ByteArray)
+	{
+		// Put input bytes into fast mem *after* a gap for output bytes.
+		// This allows multiple calls to update without needing to pre-delcare an input
+		// buffer big enough (i.e. streaming).
+		var offset = currentAddr + maxOutputBytes(bytes.bytesAvailable);
+		var end : UInt = offset + bytes.bytesAvailable;
+		
+		// Reserve space
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		if (mem.length < end) {
+			mem.length = end;
+		}
+		
+		memcpy(bytes, offset);
+		fastUpdate(offset, end);
+	}
+	
+	
+	// Updates the current block with the compressed representation of bytes between the from and to indexes
+	// (of selected memory)
 	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
-	public function update(bytes : ByteArray)
+	public function fastUpdate(offset : UInt, end : UInt)
 	{
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (level == CompressionLevel.UNCOMPRESSED) {
-			var len = Std.int(Math.min(bytes.bytesAvailable, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
+			var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
 			
 			if (len + 8 > mem.length - currentAddr) {
 				mem.length += len + 8;
@@ -176,8 +205,8 @@ class DeflateStream
 			}
 			
 			var byte : UInt;
-			for (i in 0...len) {
-				byte = bytes.readByte() & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
+			for (i in offset ... end) {
+				byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
 				
 				if (zlib) {
 					s1 = (s1 + byte) % ADDLER_MAX;
@@ -188,18 +217,17 @@ class DeflateStream
 			}
 		}
 		else {
+			var len = end - offset;
+			
 			// Make sure there's enough room in the output
-			// Using Huffman compression with max 15 bits can't possibly
-			// exceed twice the uncompressed length. Margin of 256 includes
-			// up to ~128 bytes of header/footer data, rounded up for good luck.
-			if (bytes.bytesAvailable * 2 + 256 > mem.length - currentAddr) {
-				mem.length = bytes.bytesAvailable * 2 + 256 + currentAddr;
+			if (maxOutputBytes(len) > mem.length - currentAddr) {
+				mem.length = maxOutputBytes(len) + currentAddr;
 			}
 			
 			if (freshBlock) {
 				// Write Huffman trees into the stream as per RFC 1951
 				
-				var literalLengthTree = createLiteralLengthTree(bytes);
+				var literalLengthTree = createLiteralLengthTree(offset, end);
 				literalLengthLookup = literalLengthTree.codes;
 				
 				if (distanceLookup == null) {
@@ -248,8 +276,8 @@ class DeflateStream
 			
 			// Write data
 			var byte : UInt;
-			for (i in 0 ... bytes.bytesAvailable) {
-				byte = bytes.readByte() & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
+			for (i in offset ... end) {
+				byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
 				
 				if (zlib) {
 					s1 = (s1 + byte) % ADDLER_MAX;
@@ -356,7 +384,7 @@ class DeflateStream
 	}
 	
 	
-	private static inline function createLiteralLengthTree(sampleData : ByteArray)
+	private static function createLiteralLengthTree(offset : UInt, end : UInt)
 	{
 		// No lengths for now, just literals + EOB
 		
@@ -373,26 +401,23 @@ class DeflateStream
 		
 		
 		// Sample given bytes to estimate literal weights
+		var len = end - offset;
 		var sampleFrequency;
-		if (sampleData.bytesAvailable <= 1024) {
+		if (len <= 1024) {
 			// Small sample, calculate exactly
 			sampleFrequency = 1;
 		}
-		else if (sampleData.bytesAvailable <= 20 * 1024) {
+		else if (len <= 20 * 1024) {
 			sampleFrequency = 20;	// Sample every 20th byte
 		}
 		else {
 			sampleFrequency = 30;
 		}
 		
-		var oldPosition = sampleData.position;
-		var samples = Math.floor(sampleData.bytesAvailable / sampleFrequency);
+		var samples = Math.floor(len / sampleFrequency);
 		for (i in 0 ... samples) {
-			sampleData.position = oldPosition + i * sampleFrequency;
-			++weights[sampleData.readByte() & 0xFF];
+			++weights[Memory.getByte(offset + i * sampleFrequency) & 0xFF];
 		}
-		
-		sampleData.position = oldPosition;
 		
 		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH);
 	}
@@ -424,6 +449,22 @@ class DeflateStream
 		}
 		
 		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH_CODE_LENGTH);
+	}
+	
+	
+	private static inline function maxOutputBytes(inputBytes : UInt)
+	{
+		// Using Huffman compression with max 15 bits can't possibly
+		// exceed twice the uncompressed length. Margin of 256 includes
+		// up to ~128 bytes of header/footer data, rounded up for good luck.
+		return inputBytes * 2 + 256;
+	}
+	
+	
+	// Copies length bytes (all by default) from src into flash.Memory at the specified offset
+	private static inline function memcpy(src : ByteArray, offset : UInt, length : UInt = 0) : Void
+	{
+		src.readBytes(ApplicationDomain.currentDomain.domainMemory, offset, length);
 	}
 }
 
