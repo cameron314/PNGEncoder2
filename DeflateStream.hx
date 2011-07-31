@@ -293,7 +293,7 @@ class DeflateStream
 				
 				// Write (compressed) code lengths of literal/length codes
 				for (i in 0 ... literalLengthCodes) {
-					writeSymbol(Memory.getI32(scratchAddr + i * 4), CODE_LENGTH_OFFSET);
+					writeSymbol(Memory.getUI16(scratchAddr + i * 4), CODE_LENGTH_OFFSET);
 				}
 				
 				// Write (compressed) code lengths of distance codes
@@ -302,7 +302,7 @@ class DeflateStream
 				}
 				else {
 					for (i in 0 ... distanceCodes) {
-						writeSymbol(Memory.getI32(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
+						writeSymbol(Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
 					}
 				}
 			}
@@ -437,7 +437,7 @@ class DeflateStream
 	private inline function writeSymbol(symbol : Int, scratchOffset = 0)
 	{
 		// For codes, get codelength. All symbols are <= 2 bytes
-		var compressed = Memory.getI32(scratchAddr + scratchOffset + (symbol & 0xFFFF) * 4);
+		var compressed = Memory.getI32(scratchAddr + scratchOffset + symbol * 4);
 		
 		writeBits(compressed >>> 16, compressed & 0xFFFF);
 	}
