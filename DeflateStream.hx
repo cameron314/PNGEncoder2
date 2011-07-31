@@ -310,16 +310,17 @@ class DeflateStream
 			// TODO: Use LZ77 (depending on compression settings)
 			
 			// Write data
-			var byte : UInt;
 			for (i in offset ... end) {
-				byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
-				
-				if (zlib) {
+				writeSymbol(Memory.getByte(i));
+			}
+			
+			if (zlib) {
+				var byte : UInt;
+				for (i in offset ... end) {
+					byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
 					s1 = (s1 + byte) % ADDLER_MAX;
 					s2 = (s2 + s1) % ADDLER_MAX;
 				}
-				
-				writeSymbol(byte);
 			}
 		}
 		
@@ -433,7 +434,7 @@ class DeflateStream
 		currentAddr += 2;
 	}
 	
-	private inline function writeSymbol(symbol : Int, ?scratchOffset : UInt = 0)
+	private inline function writeSymbol(symbol : Int, scratchOffset = 0)
 	{
 		// For codes, get codelength. All symbols are <= 2 bytes
 		var compressed = Memory.getI32(scratchAddr + scratchOffset + (symbol & 0xFFFF) * 4);
