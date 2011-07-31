@@ -214,6 +214,14 @@ class OptimizedPNGEncoder
 		var deflateScratchAddrStart = scratchAddrStart + scratchSize;
 		var deflateStream = new DeflateStream(FAST, true, deflateScratchAddrStart, CHUNK_START);
 		deflateStream.fastWriteBlock(addrStart, addrStart + length, true);
+		
+		// Uncomment if using UNCOMPRESSED level
+		/*while (!deflateStream.fastWriteBlock(addrStart, addrStart + length, false)) {
+			addrStart += DeflateStream.MAX_UNCOMPRESSED_BYTES_PER_BLOCK;
+			length -= DeflateStream.MAX_UNCOMPRESSED_BYTES_PER_BLOCK;
+		}
+		deflateStream.writeEmptyBlock(true);
+		*/
 		var range = deflateStream.fastFinalize();
 		
 		return range.len();

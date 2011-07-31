@@ -83,6 +83,9 @@ class DeflateStream
 	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
 	public static inline var SCRATCH_MEMORY_SIZE : UInt = 512 * 4;		// Bytes
 	
+	private static inline var DISTANCE_OFFSET : UInt = 285 * 4;		// Where distance lookup is stored in scratch memory
+	private static inline var CODE_LENGTH_OFFSET : UInt = DISTANCE_OFFSET + 32 * 4;
+	
 	private static inline var ADDLER_MAX : UInt = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : UInt = 15;
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : UInt = 7;
@@ -96,12 +99,12 @@ class DeflateStream
 	private var scratchAddr : Int;
 	private var freshBlock : Bool;
 	
+	private var literalLengthCodes : UInt;		// Count
+	private var distanceCodes : Int;			// Count
+	
 	// For calculating Adler-32 sum
 	private var s1 : UInt;
 	private var s2 : UInt;
-	
-	private var literalLengthLookup : Array<Int>;
-	private var distanceLookup : Array<Int>;
 	
 	private var bitBuffer : UInt;
 	private var bitBufferLength : Int;
@@ -137,6 +140,7 @@ class DeflateStream
 			mem.length  = minLength;
 		}
 		
+		distanceCodes = -1;
 		freshBlock = false;
 		s1 = 1;
 		s2 = 0;
@@ -249,25 +253,34 @@ class DeflateStream
 			if (freshBlock) {
 				// Write Huffman trees into the stream as per RFC 1951
 				
-				var literalLengthTree = createLiteralLengthTree(offset, end);
-				literalLengthLookup = literalLengthTree.codes;
-				
-				if (distanceLookup == null) {
-					var distanceTree = createDistanceTree();
-					distanceLookup = distanceTree.codes;
+				var literalLengthLookup = createLiteralLengthTree(offset, end).codes;
+				literalLengthCodes = literalLengthLookup.length;
+				for (i in 0 ... literalLengthCodes) {
+					Memory.setI32(scratchAddr + i * 4, literalLengthLookup[i]);
 				}
 				
-				var codeLengthLookup = createCodeLengthTree(literalLengthLookup, distanceLookup).codes;
+				if (distanceCodes == -1) {
+					var distanceTree = createDistanceTree();
+					distanceCodes = distanceTree.codes.length;
+					for (i in 0 ... distanceCodes) {
+						Memory.setI32(scratchAddr + DISTANCE_OFFSET + i * 4, distanceTree.codes[i]);
+					}
+				}
+				
+				var codeLengthLookup = createCodeLengthTree().codes;
+				for (i in 0 ... codeLengthLookup.length) {
+					Memory.setI32(scratchAddr + CODE_LENGTH_OFFSET + i * 4, codeLengthLookup[i]);
+				}
 				
 				// HLIT
-				writeBits(literalLengthLookup.length - 257, 5);
+				writeBits(literalLengthCodes - 257, 5);
 				
 				// HDIST
-				if (distanceLookup.length == 0) {
+				if (distanceCodes == 0) {
 					writeBits(0, 5);		// Minimum one distance code
 				}
 				else {
-					writeBits(distanceLookup.length - 1, 5);
+					writeBits(distanceCodes - 1, 5);
 				}
 				
 				// HCLEN
@@ -279,17 +292,17 @@ class DeflateStream
 				}
 				
 				// Write (compressed) code lengths of literal/length codes
-				for (code in literalLengthLookup) {
-					writeSymbol(code, codeLengthLookup);
+				for (i in 0 ... literalLengthCodes) {
+					writeSymbol(Memory.getI32(scratchAddr + i * 4), CODE_LENGTH_OFFSET);
 				}
 				
 				// Write (compressed) code lengths of distance codes
-				if (distanceLookup.length == 0) {
-					writeSymbol(0, codeLengthLookup);
+				if (distanceCodes == 0) {
+					writeSymbol(0, CODE_LENGTH_OFFSET);
 				}
 				else {
-					for (code in distanceLookup) {
-						writeSymbol(code, codeLengthLookup);
+					for (i in 0 ... distanceCodes) {
+						writeSymbol(Memory.getI32(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
 					}
 				}
 			}
@@ -306,7 +319,7 @@ class DeflateStream
 					s2 = (s2 + s1) % ADDLER_MAX;
 				}
 				
-				writeSymbol(byte, literalLengthLookup);
+				writeSymbol(byte);
 			}
 		}
 		
@@ -319,7 +332,7 @@ class DeflateStream
 	public inline function endBlock()
 	{
 		if (level != UNCOMPRESSED) {
-			writeSymbol(EOB, literalLengthLookup);
+			writeSymbol(EOB);
 		}
 	}
 	
@@ -420,9 +433,11 @@ class DeflateStream
 		currentAddr += 2;
 	}
 	
-	private inline function writeSymbol(symbol : Int, lookup : Array<Int>)
+	private inline function writeSymbol(symbol : Int, ?scratchOffset : UInt = 0)
 	{
-		var compressed = lookup[symbol & 0xFFFF];		// For codes, gets codelength. All symbols are <= 2 bytes
+		// For codes, get codelength. All symbols are <= 2 bytes
+		var compressed = Memory.getI32(scratchAddr + scratchOffset + (symbol & 0xFFFF) * 4);
+		
 		writeBits(compressed >>> 16, compressed & 0xFFFF);
 	}
 	
@@ -476,7 +491,7 @@ class DeflateStream
 	}
 	
 	
-	private static inline function createCodeLengthTree(literalLengthLookup : Array<Int>, distanceLookup : Array<Int>)
+	private inline function createCodeLengthTree()
 	{
 		var weights = new Array<UInt>();
 		
@@ -484,11 +499,11 @@ class DeflateStream
 			weights.push(1);
 		}
 		
-		for (code in literalLengthLookup) {
-			++weights[code & 0xFFFF];
+		for (i in 0 ... literalLengthCodes) {
+			++weights[Memory.getUI16(scratchAddr + i * 4) & 0xFFFF];
 		}
-		for (code in distanceLookup) {
-			++weights[code & 0xFFFF];
+		for (i in 0 ... distanceCodes) {
+			++weights[Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4) & 0xFFFF];
 		}
 		
 		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH_CODE_LENGTH);
