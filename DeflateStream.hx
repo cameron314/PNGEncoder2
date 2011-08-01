@@ -106,8 +106,7 @@ class DeflateStream
 	private var s1 : UInt;
 	private var s2 : UInt;
 	
-	private var bitBuffer : UInt;
-	private var bitBufferLength : Int;
+	private var bitOffset : Int;
 	
 	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
 	
@@ -134,8 +133,9 @@ class DeflateStream
 		this.currentAddr = startAddr;
 		
 		// Ensure at least 3 bytes for possible zlib data and block header bits
+		// writeBits requires 3 bytes past what is needed
 		var mem = ApplicationDomain.currentDomain.domainMemory;
-		var minLength : UInt = startAddr + 3;
+		var minLength : UInt = startAddr + 6;
 		if (mem.length < minLength) {
 			mem.length  = minLength;
 		}
@@ -163,7 +163,7 @@ class DeflateStream
 	
 	
 	// Helper method. Same as sequentially calling beginBlock, fastUpdate, and endBlock
-	public inline function fastWriteBlock(offset : UInt, end : UInt, lastBlock = false)
+	public inline function fastWriteBlock(offset : Int, end : Int, lastBlock = false)
 	{
 		beginBlock(lastBlock);
 		var wroteAll = fastUpdate(offset, end);
@@ -176,13 +176,15 @@ class DeflateStream
 	{
 		freshBlock = true;
 		
-		bitBuffer = 0;
-		bitBufferLength = 0;
+		bitOffset = 0;
 		
 		if (level == CompressionLevel.UNCOMPRESSED) {
 			writeByte(lastBlock ? 1 : 0);		// Uncompressed
 		}
 		else {
+			// writeBits relies on first byte being initiazed to 0
+			Memory.setByte(currentAddr, 0);
+			
 			writeBits(4 | (lastBlock ? 1 : 0), 3);		// Dynamic Huffman tree compression
 		}
 	}
@@ -194,11 +196,12 @@ class DeflateStream
 		// This allows multiple calls to update without needing to pre-delcare an input
 		// buffer big enough (i.e. streaming).
 		var offset = currentAddr + maxOutputBufferSize(bytes.bytesAvailable);
-		var end : UInt = offset + bytes.bytesAvailable;
+		var end = offset + bytes.bytesAvailable;
 		
 		// Reserve space
 		var mem = ApplicationDomain.currentDomain.domainMemory;
-		if (mem.length < end) {
+		var uend : UInt = end;
+		if (mem.length < uend) {
 			mem.length = end;
 		}
 		
@@ -210,7 +213,13 @@ class DeflateStream
 	// Updates the current block with the compressed representation of bytes between the from and to indexes
 	// (of selected memory)
 	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
-	public function fastUpdate(offset : UInt, end : UInt)
+	public function fastUpdate(offset : Int, end : Int)
+	{
+		return _fastUpdate(offset, end);
+	}
+	
+	
+	private inline function _fastUpdate(offset : Int, end : Int)
 	{
 		var wroteAll = true;
 		
@@ -372,11 +381,8 @@ class DeflateStream
 	// Call only once. After called, no other methods should be called
 	public inline function fastFinalize() : MemoryRange
 	{
-		// Flush stream
-		while (bitBufferLength > 0) {
-			writeByte(bitBuffer);
-			bitBuffer >>= 8;
-			bitBufferLength -= 8;
+		if (bitOffset > 0) {
+			++currentAddr;		// active byte is now last byte
 		}
 		
 		if (zlib) {
@@ -404,22 +410,15 @@ class DeflateStream
 	
 	
 	
-	// Writes up to 32 bits into the stream (bits must be zero-padded)
+	// Writes up to 25 bits into the stream (bits must be zero-padded)
 	private inline function writeBits(bits : UInt, bitCount : UInt)
 	{
-		// TODO: Optimize by removing the if -- instead of buffering in int,
-		// just use fast memory directly.
-		
-		bitBuffer |= bits << bitBufferLength;
-		bitBufferLength += bitCount;
-		
-		
-		if (bitBufferLength >= 32) {
-			bitBufferLength -= 32;
-			Memory.setI32(currentAddr, bitBuffer);
-			currentAddr += 4;
-			bitBuffer = bits >>> (bitCount - bitBufferLength);
-		}
+		var current = Memory.getByte(currentAddr);
+		current |= bits << bitOffset;
+		Memory.setI32(currentAddr, current);
+		bitOffset += bitCount;
+		currentAddr += bitOffset >>> 3; // divided by 8
+		bitOffset &= 0x7;		// modulus 8
 	}
 	
 	private inline function writeByte(byte : UInt)
@@ -438,7 +437,6 @@ class DeflateStream
 	{
 		// For codes, get codelength. All symbols are <= 2 bytes
 		var compressed = Memory.getI32(scratchAddr + scratchOffset + symbol * 4);
-		
 		writeBits(compressed >>> 16, compressed & 0xFFFF);
 	}
 	
