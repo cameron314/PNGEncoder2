@@ -534,6 +534,11 @@ class HuffmanTree
 	// to be the integers 0...weights.length. Each weight must not exceed 16 bits.
 	public static function fromWeightedAlphabet(weights : Array<UInt>, maxCodeLength : Int) : HuffmanTree
 	{
+		return _fromWeightedAlphabet(weights, maxCodeLength);
+	}
+	
+	private static inline function _fromWeightedAlphabet(weights : Array<UInt>, maxCodeLength : Int) : HuffmanTree
+	{
 		if (maxCodeLength > 16) {
 			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");
 		}
@@ -569,8 +574,7 @@ class HuffmanTree
 				}
 			}
 			
-			// Sort by weight non-decreasing
-			codelens.sort(function (a, b) return (a & 0xFFFF) - (b & 0xFFFF));
+			codelens.sort(byWeightNonDecreasing);
 		}
 		
 		// Calculate unrestricted code lengths
@@ -584,14 +588,7 @@ class HuffmanTree
 		// symbols are in increasing order for equal bitlengths. Using a custom insertion sort
 		// may be faster.
 		// See http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
-		codelens.sort(function (a, b) {
-			var result = (b & 0xFFFF) - (a & 0xFFFF);
-			if (result == 0) {
-				result = (b >>> 16) - (a >>> 16);
-			}
-			
-			return result;
-		});
+		codelens.sort(byCodeLengthAndSymbolDecreasing);
 		
 		// Calculate the actual codes (canonical Huffman tree).
 		// Result is stored in lookup table (by symbol)
@@ -600,6 +597,20 @@ class HuffmanTree
 		var tree = new HuffmanTree();
 		tree.codes = codes;
 		return tree;
+	}
+	
+	
+	private static function byWeightNonDecreasing(a, b) {
+		return (a & 0xFFFF) - (b & 0xFFFF);
+	}
+	
+	private static function byCodeLengthAndSymbolDecreasing(a, b) {
+		var result = (b & 0xFFFF) - (a & 0xFFFF);
+		if (result == 0) {
+			result = (b >>> 16) - (a >>> 16);
+		}
+		
+		return result;
 	}
 	
 	
