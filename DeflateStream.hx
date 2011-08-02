@@ -63,10 +63,10 @@ enum CompressionLevel {
 
 
 class MemoryRange {
-	public var offset : UInt;
-	public var end : UInt;
+	public var offset : Int;
+	public var end : Int;
 	
-	public function new(offset : UInt, end : UInt)
+	public function new(offset : Int, end : Int)
 	{
 		this.offset = offset;
 		this.end = end;
@@ -81,14 +81,14 @@ class MemoryRange {
 class DeflateStream
 {
 	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
-	public static inline var SCRATCH_MEMORY_SIZE : UInt = 512 * 4;		// Bytes
+	public static inline var SCRATCH_MEMORY_SIZE : Int = 512 * 4;		// Bytes
 	
-	private static inline var DISTANCE_OFFSET : UInt = 285 * 4;		// Where distance lookup is stored in scratch memory
-	private static inline var CODE_LENGTH_OFFSET : UInt = DISTANCE_OFFSET + 32 * 4;
+	private static inline var DISTANCE_OFFSET : Int = 285 * 4;		// Where distance lookup is stored in scratch memory
+	private static inline var CODE_LENGTH_OFFSET : Int = DISTANCE_OFFSET + 32 * 4;
 	
-	private static inline var ADDLER_MAX : UInt = 65521;		// Largest prime smaller than 65536
-	private static inline var MAX_CODE_LENGTH : UInt = 15;
-	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : UInt = 7;
+	private static inline var ADDLER_MAX : Int = 65521;		// Largest prime smaller than 65536
+	private static inline var MAX_CODE_LENGTH : Int = 15;
+	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
 	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
 	private static inline var EOB = 256;		// End of block symbol
 	
@@ -99,7 +99,7 @@ class DeflateStream
 	private var scratchAddr : Int;
 	private var freshBlock : Bool;
 	
-	private var literalLengthCodes : UInt;		// Count
+	private var literalLengthCodes : Int;		// Count
 	private var distanceCodes : Int;			// Count
 	
 	// For calculating Adler-32 sum
@@ -237,7 +237,7 @@ class DeflateStream
 				writeShort(~len);
 			}
 			
-			var byte : UInt;
+			var byte : Int;
 			for (i in offset ... offset + len) {
 				byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
 				
@@ -324,7 +324,7 @@ class DeflateStream
 			}
 			
 			if (zlib) {
-				var byte : UInt;
+				var byte : Int;
 				for (i in offset ... end) {
 					byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
 					s1 = (s1 + byte) % ADDLER_MAX;
@@ -399,19 +399,19 @@ class DeflateStream
 	
 	
 	// Does not include SCRATCH_MEMORY_SIZE
-	public static inline function maxOutputBufferSize(uncompressedByteCount : UInt, blockCount = 1)
+	public static inline function maxOutputBufferSize(uncompressedByteCount : Int, blockCount = 1)
 	{
 		// Using Huffman compression with max 15 bits can't possibly
 		// exceed twice the uncompressed length. Margin of 300 includes
 		// header/footer data (think 285 length/literal codes at 7 bits max each),
-		//rounded up for good luck.
+		// rounded up for good luck.
 		return uncompressedByteCount * 2 + 300 * blockCount;
 	}
 	
 	
 	
 	// Writes up to 25 bits into the stream (bits must be zero-padded)
-	private inline function writeBits(bits : UInt, bitCount : UInt)
+	private inline function writeBits(bits : Int, bitCount : Int)
 	{
 		var current = Memory.getByte(currentAddr);
 		current |= bits << bitOffset;
@@ -421,13 +421,13 @@ class DeflateStream
 		bitOffset &= 0x7;		// modulus 8
 	}
 	
-	private inline function writeByte(byte : UInt)
+	private inline function writeByte(byte : Int)
 	{
 		Memory.setByte(currentAddr, byte);
 		++currentAddr;
 	}
 	
-	private inline function writeShort(num : UInt)
+	private inline function writeShort(num : Int)
 	{
 		Memory.setI16(currentAddr, num);
 		currentAddr += 2;
@@ -441,7 +441,7 @@ class DeflateStream
 	}
 	
 	
-	private static inline function createLiteralLengthTree(offset : UInt, end : UInt)
+	private static inline function createLiteralLengthTree(offset : Int, end : Int)
 	{
 		// No lengths for now, just literals + EOB
 		
@@ -482,7 +482,7 @@ class DeflateStream
 	
 	private static inline function createDistanceTree()
 	{
-		var weights = new Array<UInt>();
+		var weights = new Array<Int>();
 		
 		// No distances yet
 		
@@ -492,7 +492,7 @@ class DeflateStream
 	
 	private inline function createCodeLengthTree()
 	{
-		var weights = new Array<UInt>();
+		var weights = new Array<Int>();
 		
 		for (len in 0 ... 19) {
 			weights.push(1);
@@ -510,7 +510,7 @@ class DeflateStream
 	
 	
 	// Copies length bytes (all by default) from src into flash.Memory at the specified offset
-	private static inline function memcpy(src : ByteArray, offset : UInt, length : UInt = 0) : Void
+	private static inline function memcpy(src : ByteArray, offset : Int, length : Int = 0) : Void
 	{
 		src.readBytes(ApplicationDomain.currentDomain.domainMemory, offset, length);
 	}
@@ -532,12 +532,12 @@ class HuffmanTree
 	
 	// Creates a Huffman tree for the given weights. The symbols are assumed
 	// to be the integers 0...weights.length. Each weight must not exceed 16 bits.
-	public static function fromWeightedAlphabet(weights : Array<UInt>, maxCodeLength : Int) : HuffmanTree
+	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int) : HuffmanTree
 	{
 		return _fromWeightedAlphabet(weights, maxCodeLength);
 	}
 	
-	private static inline function _fromWeightedAlphabet(weights : Array<UInt>, maxCodeLength : Int) : HuffmanTree
+	private static inline function _fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int) : HuffmanTree
 	{
 		if (maxCodeLength > 16) {
 			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");
@@ -779,7 +779,7 @@ class HuffmanTree
 	
 	// Reverses count bits of v and returns the result (just the reversed bits)
 	// Count must be <= 16 (i.e. max 2 bytes)
-	private static inline function reverseBits(v : UInt, count : UInt) : UInt
+	private static inline function reverseBits(v : Int, count : Int) : UInt
 	{
 		// From http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel
 		
