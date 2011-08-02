@@ -238,8 +238,9 @@ class DeflateStream
 			}
 			
 			var i = offset;
-			var cappedEnd = (offset + len) & 0xFFFFFFFC;		// round down to nearest 4-byte count
-			while (i < cappedEnd) {
+			var cappedEnd = (offset + len);
+			var cappedEndMinus4 = cappedEnd - 4;
+			while (i < cappedEndMinus4) {
 				Memory.setI32(currentAddr, Memory.getI32(i));
 				i += 4;
 				currentAddr += 4;

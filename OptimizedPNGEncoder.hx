@@ -222,6 +222,7 @@ class OptimizedPNGEncoder
 		}
 		deflateStream.writeEmptyBlock(true);
 		*/
+		
 		var range = deflateStream.fastFinalize();
 		
 		return range.len();
