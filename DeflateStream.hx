@@ -237,16 +237,21 @@ class DeflateStream
 				writeShort(~len);
 			}
 			
-			var byte : Int;
-			for (i in offset ... offset + len) {
-				byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
-				
-				if (zlib) {
-					s1 = (s1 + byte) % ADDLER_MAX;
-					s2 = (s2 + s1) % ADDLER_MAX;
-				}
-				
-				writeByte(byte);
+			var i = offset;
+			var cappedEnd = (offset + len) & 0xFFFFFFFC;		// round down to nearest 4-byte count
+			while (i < cappedEnd) {
+				Memory.setI32(currentAddr, Memory.getI32(i));
+				i += 4;
+				currentAddr += 4;
+			}
+			while (i < offset + len) {
+				Memory.setByte(currentAddr, Memory.getByte(i));
+				++i;
+				++currentAddr;
+			}
+			
+			if (zlib) {
+				updateAdler32(offset, offset + len);
 			}
 			
 			wroteAll = (end - offset == len);
@@ -324,12 +329,7 @@ class DeflateStream
 			}
 			
 			if (zlib) {
-				var byte : Int;
-				for (i in offset ... end) {
-					byte = Memory.getByte(i) & 0xFF;		// Because sometimes the other bytes of the returned int are garbage
-					s1 = (s1 + byte) % ADDLER_MAX;
-					s2 = (s2 + s1) % ADDLER_MAX;
-				}
+				updateAdler32(offset, end);
 			}
 		}
 		
@@ -441,6 +441,44 @@ class DeflateStream
 	}
 	
 	
+	// From zlib's adler32.c:
+	private static inline var NMAX = 5552;	// NMAX is the largest n such that 255n(n+1)/2 + (n+1)(ADDLER_MAX-1) <= 2^32-1
+	
+	private inline function updateAdler32(offset : Int, end : Int)
+	{
+		// Heavily influenced by zlib's adler32.c implementation. All of the optimization
+		// tricks are taken from there.
+		
+		var startTime = Lib.getTimer();
+		var byte : Int;
+		while (offset + NMAX <= end) {
+			for (i in offset ... offset + NMAX) {
+				byte = Memory.getByte(i);
+				s1 += byte;
+				s2 += s1;
+			}
+			
+			s1 %= ADDLER_MAX;
+			s2 %= ADDLER_MAX;
+			
+			offset += NMAX;
+		}
+		
+		if (offset != end) {
+			for (i in offset ... end) {
+				byte = Memory.getByte(i);
+				s1 += byte;
+				s2 += s1;
+			}
+			
+			s1 %= ADDLER_MAX;
+			s2 %= ADDLER_MAX;
+		}
+		var endTime = Lib.getTimer();
+		trace("Adler-32 sum: " + (endTime - startTime) + "ms");
+	}
+	
+	
 	private static inline function createLiteralLengthTree(offset : Int, end : Int)
 	{
 		// No lengths for now, just literals + EOB
@@ -473,7 +511,7 @@ class DeflateStream
 		
 		var samples = Math.floor(len / sampleFrequency);
 		for (i in 0 ... samples) {
-			++weights[Memory.getByte(offset + i * sampleFrequency) & 0xFF];
+			++weights[Memory.getByte(offset + i * sampleFrequency)];
 		}
 		
 		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH);
