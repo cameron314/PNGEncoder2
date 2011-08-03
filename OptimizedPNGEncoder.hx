@@ -39,6 +39,7 @@ import flash.geom.Rectangle;
 import flash.Lib;
 import flash.Memory;
 import flash.system.ApplicationDomain;
+import flash.system.System;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
 import DeflateStream;
@@ -65,8 +66,14 @@ class OptimizedPNGEncoder
 	 * @return a ByteArray representing the PNG encoded image data.
 	 * @playerversion Flash 10
 	 */
-	public static function encode(img:BitmapData):ByteArray
+	public static function encode(img : BitmapData) : ByteArray
 	{
+		return _encode(img);
+	}
+	
+	private static inline function _encode(img : BitmapData) : ByteArray
+	{
+		//var outerStartTime = Lib.getTimer();
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
@@ -75,27 +82,44 @@ class OptimizedPNGEncoder
 		// The first 256 * 4 bytes are the CRC table
 		// Inner chunk data is appended to the CRC table, starting at CHUNK_START
 		
+		//var startTime = Lib.getTimer();
 		initialize();		// Sets up data var & CRC table
-		
 		
 		// Create output byte array
 		var png:ByteArray = new ByteArray();
+		//var endTime = Lib.getTimer();
+		//trace("Initialized in " + (endTime - startTime) + "ms");
 		
+		//startTime = Lib.getTimer();
 		writePNGSignature(png);
 		
 		// Build chunks (get stored in data starting at CHUNK_START)
 		
 		var chunkLength = buildIHDRChunk(img);
 		writeChunk(png, 0x49484452, chunkLength);
+		//endTime = Lib.getTimer();
+		//trace("Built and wrote signature and IHDR chunk in " + (endTime - startTime) + "ms");
 		
+		//startTime = Lib.getTimer();
 		chunkLength = buildIDATChunk(img);
+		//endTime = Lib.getTimer();
+		//trace("Built IDAT chunk in " + (endTime - startTime) + "ms");
+		
+		//startTime = Lib.getTimer();
 		writeChunk(png, 0x49444154, chunkLength);
+		//endTime = Lib.getTimer();
+		//trace("Wrote IDAT chunk in " + (endTime - startTime) + "ms");
 		
+		//startTime = Lib.getTimer();
 		writeChunk(png, 0x49454E44, 0);
+		//endTime = Lib.getTimer();
+		//trace("Wrote IEND chunk in " + (endTime - startTime) + "ms");
 		
-		ApplicationDomain.currentDomain.domainMemory = oldFastMem;
+		Memory.select(oldFastMem);
 		
 		png.position = 0;
+		//var outerEndTime = Lib.getTimer();
+		//trace("Total: " + (outerEndTime - outerStartTime) + "ms");
 		return png;
 	}
 
