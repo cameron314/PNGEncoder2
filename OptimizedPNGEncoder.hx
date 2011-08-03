@@ -207,30 +207,49 @@ class OptimizedPNGEncoder
 		
 		if (img.transparent) {
 			for (i in 0 ... height) {
-				Memory.setByte(addr, 0);		// No filter
+				Memory.setByte(addr, 1);		// Sub filter
 				addr += 1;
 				
-				// Copy line, moving alpha byte to end
-				for (j in 0 ... width) {
+				if (width > 0) {
+					// Do first pixel (4 bytes) manually (sub formula is different)
 					Memory.setI32(addr, Memory.getI32(scratchAddr) >>> 8);
 					Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 0));
 					addr += 4;
 					scratchAddr += 4;
+				
+					// Copy line, moving alpha byte to end, and applying filter
+					for (j in 1 ... width) {
+						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
+						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
+						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+						Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 0) - Memory.getByte(scratchAddr - 4));
+						addr += 4;
+						scratchAddr += 4;
+					}
 				}
 			}
 		}
 		else {
 			for (i in 0 ... height) {
-				Memory.setByte(addr, 0);		// No filter
+				Memory.setByte(addr, 1);		// Sub filter
 				addr += 1;
 				
-				// Copy line
-				for (j in 0 ... width) {
+				if (width > 0) {
+					// Do first pixel (3 bytes) manually (sub formula is different)
 					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
 					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
 					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
 					addr += 3;
 					scratchAddr += 4;
+					
+					// Copy line
+					for (j in 1 ... width) {
+						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
+						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
+						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+						addr += 3;
+						scratchAddr += 4;
+					}
 				}
 			}
 		}
