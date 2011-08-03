@@ -447,10 +447,8 @@ class DeflateStream
 	
 	private inline function updateAdler32(offset : Int, end : Int)
 	{
-		// Heavily influenced by zlib's adler32.c implementation. All of the optimization
-		// tricks are taken from there.
+		// Adapted directly from zlib's adler32.c implementation.
 		
-		var startTime = Lib.getTimer();
 		var byte : Int;
 		while (offset + NMAX <= end) {
 			for (i in offset ... offset + NMAX) {
@@ -475,8 +473,6 @@ class DeflateStream
 			s1 %= ADDLER_MAX;
 			s2 %= ADDLER_MAX;
 		}
-		var endTime = Lib.getTimer();
-		trace("Adler-32 sum: " + (endTime - startTime) + "ms");
 	}
 	
 	
