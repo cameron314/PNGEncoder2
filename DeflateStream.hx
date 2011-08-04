@@ -461,7 +461,7 @@ class DeflateStream
 		}
 		
 		if (offset != end) {
-			do16Adler(offset, offset += ((end - offset) & 0xFFFFFFF0));	// Floor to nearest 16
+			//do16Adler(offset, offset += ((end - offset) & 0xFFFFFFF0));	// Floor to nearest 16
 			for (i in offset ... end) {
 				s1 += Memory.getByte(i);
 				s2 += s1;
