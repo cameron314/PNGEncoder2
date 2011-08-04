@@ -447,14 +447,52 @@ class DeflateStream
 	
 	private inline function updateAdler32(offset : Int, end : Int)
 	{
-		// Adapted directly from zlib's adler32.c implementation.
+		// Adapted directly from zlib's adler32.c implementation. Most of the
+		// optimization tricks are taken straight from there.
 		
-		var byte : Int;
+		var i;
+		var stop;
+		
 		while (offset + NMAX <= end) {
-			for (i in offset ... offset + NMAX) {
-				byte = Memory.getByte(i);
-				s1 += byte;
-				s2 += s1;
+			i = offset;
+			stop = offset + NMAX;
+			while (i < stop) {		// NMAX is evenly divisible by 16
+				// Use math to calculate s1 and s2 updates in one batch.
+				// This turns out to be slightly faster than straight-up unrolling.
+				s2 += (s1 << 4) + // * 16
+					Memory.getByte(i    ) * 16 +
+					Memory.getByte(i + 1) * 15 +
+					Memory.getByte(i + 2) * 14 +
+					Memory.getByte(i + 3) * 13 +
+					Memory.getByte(i + 4) * 12 +
+					Memory.getByte(i + 5) * 11 +
+					Memory.getByte(i + 6) * 10 +
+					Memory.getByte(i + 7) * 9 +
+					Memory.getByte(i + 8) * 8 +
+					Memory.getByte(i + 9) * 7 +
+					Memory.getByte(i + 10) * 6 +
+					Memory.getByte(i + 11) * 5 +
+					Memory.getByte(i + 12) * 4 +
+					Memory.getByte(i + 13) * 3 +
+					Memory.getByte(i + 14) * 2 +
+					Memory.getByte(i + 15);
+				s1 += Memory.getByte(i) +
+					Memory.getByte(i + 1) +
+					Memory.getByte(i + 2) +
+					Memory.getByte(i + 3) +
+					Memory.getByte(i + 4) +
+					Memory.getByte(i + 5) +
+					Memory.getByte(i + 6) +
+					Memory.getByte(i + 7) +
+					Memory.getByte(i + 8) +
+					Memory.getByte(i + 9) +
+					Memory.getByte(i + 10) +
+					Memory.getByte(i + 11) +
+					Memory.getByte(i + 12) +
+					Memory.getByte(i + 13) +
+					Memory.getByte(i + 14) +
+					Memory.getByte(i + 15);
+				i += 16;
 			}
 			
 			s1 %= ADDLER_MAX;
@@ -465,8 +503,7 @@ class DeflateStream
 		
 		if (offset != end) {
 			for (i in offset ... end) {
-				byte = Memory.getByte(i);
-				s1 += byte;
+				s1 += Memory.getByte(i);
 				s2 += s1;
 			}
 			
