@@ -219,6 +219,7 @@ class OptimizedPNGEncoder
 				
 					// Copy line, moving alpha byte to end, and applying filter
 					for (j in 1 ... width) {
+						// TODO: Unroll loop
 						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
 						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
 						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
@@ -244,6 +245,7 @@ class OptimizedPNGEncoder
 					
 					// Copy line
 					for (j in 1 ... width) {
+						// TODO: Unroll loop
 						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
 						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
 						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
@@ -294,7 +296,7 @@ class OptimizedPNGEncoder
 		c = crcTable(c ^ (type & 0xFF)) ^ (c >>> 8);
 		
 		if (len != 0) {
-			for (i in CHUNK_START ... len + CHUNK_START) {
+			for (i in CHUNK_START ... CHUNK_START + len) {
 				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
 			}
 		}

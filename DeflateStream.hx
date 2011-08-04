@@ -221,10 +221,12 @@ class DeflateStream
 	
 	private inline function _fastUpdate(offset : Int, end : Int)
 	{
+		// TODO: Split this out into multiple methods, it's too large
 		var wroteAll = true;
 		
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (level == CompressionLevel.UNCOMPRESSED) {
+			// TODO: Speed up uncompressed -- determine if a byte array can copy into itself; if not, unroll memcopy loop
 			var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
 			
 			if (len + 8 > mem.length - currentAddr) {
@@ -259,6 +261,10 @@ class DeflateStream
 		}
 		else {
 			var len = end - offset;
+			
+			// TODO: Optimize overhead
+			
+			//var startTime = Lib.getTimer();
 			
 			// Make sure there's enough room in the output
 			if (maxOutputBufferSize(len) > mem.length - currentAddr) {
@@ -320,6 +326,9 @@ class DeflateStream
 						writeSymbol(Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
 					}
 				}
+				
+				//var endTime = Lib.getTimer();
+				//trace("DEFLATE block overhead took " + (endTime - startTime) + "ms");
 			}
 			
 			// TODO: Use LZ77 (depending on compression settings)
@@ -573,16 +582,16 @@ class DeflateStream
 		
 		// Sample given bytes to estimate literal weights
 		var len = end - offset;
-		var sampleFrequency;
-		if (len <= 1024) {
+		var sampleFrequency;		// Sample every nth byte
+		if (len <= 8096) {
 			// Small sample, calculate exactly
 			sampleFrequency = 1;
 		}
-		else if (len <= 20 * 1024) {
-			sampleFrequency = 20;	// Sample every 20th byte
+		else if (len <= 100 * 1024) {
+			sampleFrequency = 5;		// Use prime to avoid hitting a pattern as much as possible
 		}
 		else {
-			sampleFrequency = 30;
+			sampleFrequency = 11;
 		}
 		
 		var samples = Math.floor(len / sampleFrequency);
