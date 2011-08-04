@@ -325,8 +325,30 @@ class DeflateStream
 			// TODO: Use LZ77 (depending on compression settings)
 			
 			// Write data
-			for (i in offset ... end) {
+			var i = offset;
+			var end16 = offset + (len & 0xFFFFFFF0);		// Floor to nearest 16
+			while (i < end16) {
 				writeSymbol(Memory.getByte(i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				++i;
+			}
+			while (i < end) {
+				writeSymbol(Memory.getByte(i));
+				++i;
 			}
 			
 			if (zlib) {
