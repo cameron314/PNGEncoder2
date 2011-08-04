@@ -326,9 +326,25 @@ class DeflateStream
 			
 			// Write data
 			var i = offset;
-			var end16 = offset + (len & 0xFFFFFFF0);		// Floor to nearest 16
-			while (i < end16) {
+			var end32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
+			while (i < end32) {
 				writeSymbol(Memory.getByte(i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
 				writeSymbol(Memory.getByte(++i));
 				writeSymbol(Memory.getByte(++i));
 				writeSymbol(Memory.getByte(++i));
