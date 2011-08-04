@@ -450,50 +450,9 @@ class DeflateStream
 		// Adapted directly from zlib's adler32.c implementation. Most of the
 		// optimization tricks are taken straight from there.
 		
-		var i;
-		var stop;
-		
 		while (offset + NMAX <= end) {
-			i = offset;
-			stop = offset + NMAX;
-			while (i < stop) {		// NMAX is evenly divisible by 16
-				// Use math to calculate s1 and s2 updates in one batch.
-				// This turns out to be slightly faster than straight-up unrolling.
-				s2 += (s1 << 4) + // * 16
-					Memory.getByte(i    ) * 16 +
-					Memory.getByte(i + 1) * 15 +
-					Memory.getByte(i + 2) * 14 +
-					Memory.getByte(i + 3) * 13 +
-					Memory.getByte(i + 4) * 12 +
-					Memory.getByte(i + 5) * 11 +
-					Memory.getByte(i + 6) * 10 +
-					Memory.getByte(i + 7) * 9 +
-					Memory.getByte(i + 8) * 8 +
-					Memory.getByte(i + 9) * 7 +
-					Memory.getByte(i + 10) * 6 +
-					Memory.getByte(i + 11) * 5 +
-					Memory.getByte(i + 12) * 4 +
-					Memory.getByte(i + 13) * 3 +
-					Memory.getByte(i + 14) * 2 +
-					Memory.getByte(i + 15);
-				s1 += Memory.getByte(i) +
-					Memory.getByte(i + 1) +
-					Memory.getByte(i + 2) +
-					Memory.getByte(i + 3) +
-					Memory.getByte(i + 4) +
-					Memory.getByte(i + 5) +
-					Memory.getByte(i + 6) +
-					Memory.getByte(i + 7) +
-					Memory.getByte(i + 8) +
-					Memory.getByte(i + 9) +
-					Memory.getByte(i + 10) +
-					Memory.getByte(i + 11) +
-					Memory.getByte(i + 12) +
-					Memory.getByte(i + 13) +
-					Memory.getByte(i + 14) +
-					Memory.getByte(i + 15);
-				i += 16;
-			}
+			// NMAX is evenly divisible by 16
+			do16Adler(offset, offset + NMAX);
 			
 			s1 %= ADDLER_MAX;
 			s2 %= ADDLER_MAX;
@@ -502,6 +461,7 @@ class DeflateStream
 		}
 		
 		if (offset != end) {
+			do16Adler(offset, offset += ((end - offset) & 0xFFFFFFF0));	// Floor to nearest 16
 			for (i in offset ... end) {
 				s1 += Memory.getByte(i);
 				s2 += s1;
@@ -509,6 +469,50 @@ class DeflateStream
 			
 			s1 %= ADDLER_MAX;
 			s2 %= ADDLER_MAX;
+		}
+	}
+	
+	private inline function do16Adler(i, end)
+	{
+		// (end - i) must be divisible by 16
+		
+		while (i < end) {
+			// Use math to calculate s1 and s2 updates in one batch.
+			// This turns out to be slightly faster than straight-up unrolling.
+			s2 += (s1 << 4) + // * 16
+				Memory.getByte(i    ) * 16 +
+				Memory.getByte(i + 1) * 15 +
+				Memory.getByte(i + 2) * 14 +
+				Memory.getByte(i + 3) * 13 +
+				Memory.getByte(i + 4) * 12 +
+				Memory.getByte(i + 5) * 11 +
+				Memory.getByte(i + 6) * 10 +
+				Memory.getByte(i + 7) * 9 +
+				Memory.getByte(i + 8) * 8 +
+				Memory.getByte(i + 9) * 7 +
+				Memory.getByte(i + 10) * 6 +
+				Memory.getByte(i + 11) * 5 +
+				Memory.getByte(i + 12) * 4 +
+				Memory.getByte(i + 13) * 3 +
+				Memory.getByte(i + 14) * 2 +
+				Memory.getByte(i + 15);
+			s1 += Memory.getByte(i) +
+				Memory.getByte(i + 1) +
+				Memory.getByte(i + 2) +
+				Memory.getByte(i + 3) +
+				Memory.getByte(i + 4) +
+				Memory.getByte(i + 5) +
+				Memory.getByte(i + 6) +
+				Memory.getByte(i + 7) +
+				Memory.getByte(i + 8) +
+				Memory.getByte(i + 9) +
+				Memory.getByte(i + 10) +
+				Memory.getByte(i + 11) +
+				Memory.getByte(i + 12) +
+				Memory.getByte(i + 13) +
+				Memory.getByte(i + 14) +
+				Memory.getByte(i + 15);
+			i += 16;
 		}
 	}
 	
