@@ -50,9 +50,6 @@ import DeflateStream;
  */
 class OptimizedPNGEncoder
 {
-	// TODO: Unroll tight loops
-	
-	
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var CHUNK_START = CRC_TABLE_END;
 	private static var data : ByteArray;
@@ -297,6 +294,7 @@ class OptimizedPNGEncoder
 		
 		if (len != 0) {
 			for (i in CHUNK_START ... CHUNK_START + len) {
+				// TODO: Unroll loop
 				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
 			}
 		}

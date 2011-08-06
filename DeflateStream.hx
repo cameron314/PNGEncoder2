@@ -80,11 +80,14 @@ class MemoryRange {
 // Compliant with RFC 1950 (ZLIB) and RFC 1951 (DEFLATE)
 class DeflateStream
 {
-	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
-	public static inline var SCRATCH_MEMORY_SIZE : Int = 512 * 4;		// Bytes
+	private static inline var MAX_SYMBOLS_IN_TREE = 286;
 	
-	private static inline var DISTANCE_OFFSET : Int = 285 * 4;		// Where distance lookup is stored in scratch memory
+	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
+	public static inline var SCRATCH_MEMORY_SIZE : Int = (32 + 19 + MAX_SYMBOLS_IN_TREE * 2) * 4;		// Bytes
+	
+	private static inline var DISTANCE_OFFSET : Int = MAX_SYMBOLS_IN_TREE * 4;		// Where distance lookup is stored in scratch memory
 	private static inline var CODE_LENGTH_OFFSET : Int = DISTANCE_OFFSET + 32 * 4;
+	private static inline var HUFFMAN_SCRATCH_OFFSET : Int = CODE_LENGTH_OFFSET + 19 * 4;
 	
 	private static inline var ADDLER_MAX : Int = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : Int = 15;
@@ -114,7 +117,9 @@ class DeflateStream
 	// If scratchAddr and startAddr are set, that signifies that memory has already been selected
 	// outside of this DeflateStream, for use with it. Up to SCRATCH_MEMORY_SIZE
 	// bytes will be used at scratchAddr. If scratchAddr is not given, then no manual
-	// memory management is required.
+	// memory management is required. If scratchAddr is past startAddr, then it is the
+	// caller's reponsiblity to ensure that there's enough room between startAddr and
+	// scratchAddr for the compressed data.
 	public function new(level : CompressionLevel, writeZLIBInfo = false, scratchAddr = -1, startAddr = 0)
 	{
 		this.level = level;
@@ -132,12 +137,14 @@ class DeflateStream
 		this.startAddr = startAddr;
 		this.currentAddr = startAddr;
 		
+		HuffmanTree.scratchAddr = scratchAddr + HUFFMAN_SCRATCH_OFFSET;
+		
 		// Ensure at least 3 bytes for possible zlib data and block header bits
 		// writeBits requires 3 bytes past what is needed
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		var minLength : UInt = startAddr + 6;
 		if (mem.length < minLength) {
-			mem.length  = minLength;
+			mem.length = minLength;
 		}
 		
 		distanceCodes = -1;
@@ -588,7 +595,7 @@ class DeflateStream
 			sampleFrequency = 1;
 		}
 		else if (len <= 100 * 1024) {
-			sampleFrequency = 5;		// Use prime to avoid hitting a pattern as much as possible
+			sampleFrequency = 5;		// Use prime to avoid hitting a pattern as much as possible -- not sure if this helps, but hey
 		}
 		else {
 			sampleFrequency = 11;
@@ -596,6 +603,7 @@ class DeflateStream
 		
 		var samples = Math.floor(len / sampleFrequency);
 		for (i in 0 ... samples) {
+			// TODO: Unroll loop
 			++weights[Memory.getByte(offset + i * sampleFrequency)];
 		}
 		
@@ -642,89 +650,99 @@ class DeflateStream
 
 class HuffmanTree
 {
-	// Each entry contains the code and the code length.
+	public static var scratchAddr;
+	
+	
+	
+	// Converts an array of weights to a lookup table of codes.
+	// The weights must be stored in 32-bit integers in fast memory, from offset
+	// to end. The symbols are assumed to be the integers 0...(end - offset).
+	// The codes will be stored starting at offset, replacing the weights.
+	// Each code entry contains the code and the code length.
 	// The code is stored in the highest 16 bits, and the length in the lowest.
 	// The code's bits are reversed (RFC 1951 says Huffman codes get packed in
-	// reverse order).
-	public var codes : Array<Int>;
-	
-	
-	private function new()
+	// reverse order). Each code will be stored at the address corresponding to
+	// the symbol (i.e. symbol 2 would be at address offset + 2 * 4).
+	public static function weightedAlphabetToCodes(offset : Int, end : Int, maxCodeLength : Int) : Void
 	{
+		return _weightedAlphabetToCodes(offset, end, maxCodeLength);
 	}
 	
-	// Creates a Huffman tree for the given weights. The symbols are assumed
-	// to be the integers 0...weights.length. Each weight must not exceed 16 bits.
-	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int) : HuffmanTree
-	{
-		return _fromWeightedAlphabet(weights, maxCodeLength);
-	}
-	
-	private static inline function _fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int) : HuffmanTree
+	private static inline function _weightedAlphabetToCodes(offset, end, maxCodeLength)
 	{
 		if (maxCodeLength > 16) {
 			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");
 		}
 		
-		var codelens = new Array<Int>();
-		
-		if (weights.length > 0) {
-			// Make sure all weights fall between 0 and 65535
-			var minWeight = weights[0];
-			var maxWeight = weights[0];
+		if (end - offset > 0) {
+			// There's at least one weight
 			
-			for (w in weights) {
-				if (w > maxWeight) {
-					maxWeight = w;
-				}
-				else if (w < minWeight) {
-					minWeight = w;
-				}
+			// Create, at HUFFMAN_SCRATCH_OFFSET, a parallel array of
+			// symbols corresponding to the given weights.
+			// This is necessary since we don't know how large each weight
+			// is (so we can't stuff the symbol in the upper bits)
+			
+			var symbol = 0;
+			var i = scratchAddr;
+			var stop = i + end - offset;
+			while (i < stop) {
+				Memory.setI32(i, symbol);
+				++symbol;
+				i += 4;
 			}
 			
-			// Copy the weights and generate their corresponding symbols
-			// The symbols will be stored in the upper 16 bits.
-			
-			if (maxWeight > 65535) {
-				var range : Float = maxWeight - minWeight;
-				for (i in 0 ... weights.length) {
-					codelens[i] = (i << 16) | (Std.int((weights[i] - minWeight) / range * 65534) & 0xFFFF);
-				}
-			}
-			else {
-				for (i in 0 ... weights.length) {
-					codelens[i] = (i << 16) | (weights[i] & 0xFFFF);
-				}
-			}
-			
-			codelens.sort(byWeightNonDecreasing);
+			sortByWeightNonDecreasing(offset, end);
 		}
 		
 		// Calculate unrestricted code lengths
-		calculateOptimalCodeLengths(codelens);
+		calculateOptimalCodeLengths(offset, end);
 		
 		// Restrict code lengths
-		limitCodeLengths(codelens, maxCodeLength);
+		limitCodeLengths(offset, end, maxCodeLength);
+		
+		// Merge code lengths and symbols into the same 32-bit slots, in scratch memory.
+		// Symbols will be in upper 16 bits
+		var n = (end - offset) >> 2;
+		for (i in 0 ... n) {
+			set32(scratchAddr, i, (get32(scratchAddr, i) << 16) | get32(offset, i));
+		}
 		
 		// Sort by code length, then by symbol (both decreasing)
-		// TODO: codelens are already sorted (or nearly, if some codelengths were limited), but
-		// symbols are in increasing order for equal bitlengths. Using a custom insertion sort
-		// may be faster.
+		// Codelens are already sorted (or nearly, if some codelengths were limited), but
+		// symbols are in increasing order for equal bitlengths.
 		// See http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
-		codelens.sort(byCodeLengthAndSymbolDecreasing);
+		codelens.sort(byCodeLengthAndSymbolDecreasing);		// TODO: Custom insertion sort
 		
 		// Calculate the actual codes (canonical Huffman tree).
 		// Result is stored in lookup table (by symbol)
 		var codes = calculateCanonicalCodes(codelens);
-		
-		var tree = new HuffmanTree();
-		tree.codes = codes;
-		return tree;
 	}
 	
 	
-	private static function byWeightNonDecreasing(a, b) {
-		return (a & 0xFFFF) - (b & 0xFFFF);
+	private static inline function sortByWeightNonDecreasing(offset, end)
+	{
+		// Insertion sort
+		var i, j;
+		var currentWeight, currentSymbol;
+		
+		var len = end - offset;
+		
+		i = 4;		// First entry is already "sorted"
+		while (i < len) {
+			currentWeight = Memory.getI32(offset + i);
+			currentSymbol = Memory.getI32(scratchAddr + i);
+			
+			j = i - 4;
+			while (j >= 0 && Memory.getI32(offset + j) > currentWeight) {
+				Memory.setI32(offset + j + 4, Memory.getI32(offset + j));
+				Memory.setI32(scratchAddr + j + 4, Memory.getI32(scratchAddr + j));
+				j -= 4;
+			}
+			Memory.setI32(offset + j + 4, currentWeight);
+			Memory.setI32(scratchAddr + j + 4, currentSymbol);
+			
+			i += 4;
+		}
 	}
 	
 	private static function byCodeLengthAndSymbolDecreasing(a, b) {
@@ -737,11 +755,10 @@ class HuffmanTree
 	}
 	
 	
-	// Transforms weights into a correspondingt list of code lengths
-	private static inline function calculateOptimalCodeLengths(weights : Array<Int>)
+	// Transforms weights into a corresponding list of code lengths
+	private static inline function calculateOptimalCodeLengths(offset, end)
 	{
-		var n  = weights.length;
-		var A = weights;			// Alias
+		var n  = end - offset;
 		
 		// Uses Moffat's in-place algorithm for calculating the unrestricted Huffman code lengths
 		// Adapted from http://ww2.cs.mu.oz.au/~alistair/inplace.c
@@ -757,79 +774,80 @@ class HuffmanTree
         if (n!=0) {
 			if (n != 1) {
 				/* first pass, left to right, setting parent pointers */
-				setLow16(A, 0, getLow16(A, 0) + getLow16(A, 1));
+				set32(offset, 0, get32(offset, 0) + get32(offset, 1));
 				root = 0; leaf = 2; next = 1;
 				while (next < n-1) {
 					/* select first item for a pairing */
-					if (leaf>=n || getLow16(A, root) < getLow16(A, leaf)) {
-						setLow16(A, next, getLow16(A, root));
-						setLow16(A, root++, next);
+					if (leaf>=n || get32(offset, root) < get32(offset, leaf)) {
+						set32(offset, next, get32(offset, root));
+						set32(offset, root++, next);
 					} else {
-						setLow16(A, next, getLow16(A, leaf++));
+						set32(offset, next, get32(offset, leaf++));
 					}
 
 					/* add on the second item */
-					if (leaf>=n || (root < next && getLow16(A, root) < getLow16(A, leaf))) {
-						setLow16(A, next, getLow16(A, next) + getLow16(A, root));
-						setLow16(A, root++, next);
+					if (leaf>=n || (root < next && get32(offset, root) < get32(offset, leaf))) {
+						set32(offset, next, get32(offset, next) + get32(offset, root));
+						set32(offset, root++, next);
 					} else {
-						setLow16(A, next, getLow16(A, next) + getLow16(A, leaf++));
+						set32(offset, next, get32(offset, next) + get32(offset, leaf++));
 					}
 					
 					++next;
 				}
 				
 				/* second pass, right to left, setting internal depths */
-				setLow16(A, n - 2, 0);
+				set32(offset, n - 2, 0);
 				next = n - 3;
 				while (next>=0) {
-					setLow16(A, next, getLow16(A, getLow16(A, next)) + 1);
+					set32(offset, next, get32(offset, get32(offset, next)) + 1);
 					--next;
 				}
 				
 				/* third pass, right to left, setting leaf depths */
 				avbl = 1; used = dpth = 0; root = n-2; next = n-1;
 				while (avbl>0) {
-					while (root>=0 && getLow16(A, root)==dpth) {
+					while (root>=0 && get32(offset, root)==dpth) {
 						++used; --root;
 					}
 					while (avbl>used) {
-						setLow16(A, next--, dpth);
+						set32(offset, next--, dpth);
 						--avbl;
 					}
 					avbl = 2*used; ++dpth; used = 0;
 				}
 			}
 			else {		// n == 1
-				setLow16(A, 0, 0);
+				set32(offset, 0, 0);
 			}
 		}
 	}
 	
 	
-	private static inline function getLow16(a : Array<Int>, i : Int) : Int
+	private static inline function get32(offset : Int, i : Int) : Int
 	{
-		return a[i] & 0xFFFF;
+		return Memory.getI32(offset + (i << 2));
 	}
 	
-	private static inline function setLow16(a : Array<Int>, i : Int, v : Int)
+	private static inline function set32(offset : Int, i : Int, v : Int)
 	{
-		a[i] = (a[i] & 0xFFFF0000) | v;
+		Memory.setI32(offset + (i << 2), v);
 	}
 	
 	
-	private static inline function limitCodeLengths(codelens : Array<Int>, max : Int)
+	private static inline function limitCodeLengths(offset : Int, end : Int, max : Int)
 	{
 		// Uses (non-optimal) heuristic algorithm described at http://cbloomrants.blogspot.com/2010/07/07-03-10-length-limitted-huffman-codes.html
 		
 		// Assumes codelens is sorted in non-decreasing order by weight
 		
 		var overflow = false;
+		var n = (end - offset) >>> 2;
 		
 		// Set code lengths > max to max
-		for (i in 0 ... codelens.length) {
-			if ((codelens[i] & 0xFFFF) > max) {
-				setLow16(codelens, i, max);
+		for (i in 0 ... n) {
+			if (get32(offset, i) > max) {
+				set32(offset, i, max);
 				overflow = true;
 			}
 		}
@@ -837,30 +855,30 @@ class HuffmanTree
 		if (overflow) {
 			// Calculate Kraft number
 			var K = 0.0;
-			for (i in 0 ... codelens.length) {
-				K += Math.pow(2, -getLow16(codelens, i));
+			for (i in 0 ... n) {
+				K += Math.pow(2, -get32(offset, i));
 			}
 			
 			// Pass 1
 			var i = 0;
-			while (K > 1 && i < codelens.length) {
-				while (getLow16(codelens, i) < max && K > 1) {
-					++codelens[i];		// Only affects lower 16 bits
+			while (K > 1 && i < n) {
+				while (get32(offset, i) < max && K > 1) {
+					set32(offset, i, get32(offset, i) + 1);	// ++
 					
 					// adjust K for change in codeLen
-					K -= Math.pow(2, -getLow16(codelens, i));
+					K -= Math.pow(2, -get32(offset, i));
 				}
 				++i;
 			}
 			
 			// Pass 2
-			i = codelens.length - 1;
+			i = n - 1;
 			while (i >= 0) {
-				while ((K + Math.pow(2, -getLow16(codelens, i))) <= 1) {
+				while ((K + Math.pow(2, -get32(offset, i))) <= 1) {
 					// adjust K for change in codeLen
-					K += Math.pow(2, -getLow16(codelens, i));
+					K += Math.pow(2, -get32(offset, i));
 					
-					--codelens[i];		// Only affects lower 16 bits
+					set32(offset, i, get32(offset, i) - 1);	// --
 				}
 				
 				--i;
