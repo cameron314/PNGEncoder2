@@ -742,10 +742,6 @@ class HuffmanTree
 		// See http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
 		sortByCodeLengthAndSymbolDecreasing(scratchAddr, end - offset);
 		
-		for (i in 0 ... n) {
-			Lib.trace(StringTools.hex(get32(scratchAddr, i)));
-		}
-		
 		// Calculate the actual codes (canonical Huffman tree).
 		// Result is stored in lookup table (by symbol)
 		calculateCanonicalCodes(scratchAddr, n, offset);
