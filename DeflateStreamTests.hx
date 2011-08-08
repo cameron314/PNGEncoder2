@@ -28,10 +28,10 @@ class DeflateStreamTests
 		var weights = new Array<UInt>();
 		
 		// Act
-		var tree = HuffmanTree.fromWeightedAlphabet(weights, 15);
+		var codes = HuffmanTree.fromWeightedAlphabet(weights, 15);
 		
 		// Assert
-		assert(tree.codes.length == 0);
+		assert(codes.length == 0);
 	}
 	
 	
@@ -41,18 +41,18 @@ class DeflateStreamTests
 		var weights = [ 2, 3, 1, 1 ];
 		
 		// Act
-		var tree = HuffmanTree.fromWeightedAlphabet(weights, 15);
+		var codes = HuffmanTree.fromWeightedAlphabet(weights, 15);
 		
 		// Assert
-		assert(tree.codes.length == 4);
-		assert((tree.codes[0] >>> 16) == 1);		// Reversed code
-		assert((tree.codes[0] & 0xFFFF) == 2);		// Length
-		assert((tree.codes[1] >>> 16) == 0);
-		assert((tree.codes[1] & 0xFFFF) == 1);
-		assert(((tree.codes[2] >>> 16) & 0xFFFB) == 3);
-		assert((tree.codes[2] & 0xFFFF) == 3);
-		assert(((tree.codes[3] >>> 16) & 0xFFFB) == 3);
-		assert((tree.codes[3] & 0xFFFF) == 3);
+		assert(codes.length == 4);
+		assert((codes[0] >>> 16) == 1);		// Reversed code
+		assert((codes[0] & 0xFFFF) == 2);		// Length
+		assert((codes[1] >>> 16) == 0);
+		assert((codes[1] & 0xFFFF) == 1);
+		assert(((codes[2] >>> 16) & 0xFFFB) == 3);
+		assert((codes[2] & 0xFFFF) == 3);
+		assert(((codes[3] >>> 16) & 0xFFFB) == 3);
+		assert((codes[3] & 0xFFFF) == 3);
 	}
 	
 	

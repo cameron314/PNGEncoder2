@@ -281,24 +281,12 @@ class DeflateStream
 			if (freshBlock) {
 				// Write Huffman trees into the stream as per RFC 1951
 				
-				var literalLengthLookup = createLiteralLengthTree(offset, end).codes;
-				literalLengthCodes = literalLengthLookup.length;
-				for (i in 0 ... literalLengthCodes) {
-					Memory.setI32(scratchAddr + i * 4, literalLengthLookup[i]);
-				}
-				
+				literalLengthCodes = createLiteralLengthTree(offset, end);
 				if (distanceCodes == -1) {
-					var distanceTree = createDistanceTree();
-					distanceCodes = distanceTree.codes.length;
-					for (i in 0 ... distanceCodes) {
-						Memory.setI32(scratchAddr + DISTANCE_OFFSET + i * 4, distanceTree.codes[i]);
-					}
+					distanceCodes = createDistanceTree();
 				}
 				
-				var codeLengthLookup = createCodeLengthTree().codes;
-				for (i in 0 ... codeLengthLookup.length) {
-					Memory.setI32(scratchAddr + CODE_LENGTH_OFFSET + i * 4, codeLengthLookup[i]);
-				}
+				var codeLengthCodes = createCodeLengthTree(literalLengthCodes, distanceCodes);
 				
 				// HLIT
 				writeBits(literalLengthCodes - 257, 5);
@@ -312,11 +300,11 @@ class DeflateStream
 				}
 				
 				// HCLEN
-				writeBits(codeLengthLookup.length - 4, 4);
+				writeBits(codeLengthCodes - 4, 4);
 				
 				// Write code lengths of code length code
 				for (rank in CODE_LENGTH_ORDER) {
-					writeBits(codeLengthLookup[rank] & 0xFFFF, 3);
+					writeBits(Memory.getUI16(scratchAddr + CODE_LENGTH_OFFSET + rank * 4), 3);
 				}
 				
 				// Write (compressed) code lengths of literal/length codes
@@ -571,18 +559,16 @@ class DeflateStream
 	}
 	
 	
-	private static inline function createLiteralLengthTree(offset : Int, end : Int)
+	private inline function createLiteralLengthTree(offset : Int, end : Int)
 	{
 		// No lengths for now, just literals + EOB
 		
-		var weights = new Array<UInt>();
-		
 		for (value in 0 ... 256) {		// Literals
-			weights.push(10);
+			Memory.setI32(scratchAddr + value * 4, 10);
 		}
 		
 		// Weight EOB less than more common literals
-		weights.push(1);
+		Memory.setI32(scratchAddr + EOB * 4, 1);
 		
 		// No length codes yet
 		
@@ -601,42 +587,52 @@ class DeflateStream
 			sampleFrequency = 11;
 		}
 		
+		var byte;
 		var samples = Math.floor(len / sampleFrequency);
 		for (i in 0 ... samples) {
 			// TODO: Unroll loop
-			++weights[Memory.getByte(offset + i * sampleFrequency)];
+			byte = Memory.getByte(offset + i * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
 		}
 		
-		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH);
+		HuffmanTree.weightedAlphabetToCodes(scratchAddr, scratchAddr + 257 * 4, MAX_CODE_LENGTH);
+		
+		return 257;
 	}
 	
 	
-	private static inline function createDistanceTree()
+	private inline function createDistanceTree()
 	{
-		var weights = new Array<Int>();
-		
 		// No distances yet
 		
-		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH);
+		var offset = scratchAddr + DISTANCE_OFFSET;
+		HuffmanTree.weightedAlphabetToCodes(offset, offset, MAX_CODE_LENGTH);
+		
+		return 0;
 	}
 	
 	
-	private inline function createCodeLengthTree()
+	private inline function createCodeLengthTree(literalLengthCodes, distanceCodes)
 	{
-		var weights = new Array<Int>();
-		
 		for (len in 0 ... 19) {
-			weights.push(1);
+			Memory.setI32(scratchAddr + CODE_LENGTH_OFFSET + len * 4, 1);
 		}
 		
+		var index;
 		for (i in 0 ... literalLengthCodes) {
-			++weights[Memory.getUI16(scratchAddr + i * 4) & 0xFFFF];
+			// Increment weight for literal/length code's code length
+			index = scratchAddr + CODE_LENGTH_OFFSET + Memory.getUI16(scratchAddr + i * 4) * 4;
+			Memory.setI32(index, Memory.getI32(index) + 1);
 		}
 		for (i in 0 ... distanceCodes) {
-			++weights[Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4) & 0xFFFF];
+			// Increment weight for distance code's code length
+			index = scratchAddr + CODE_LENGTH_OFFSET + Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4) * 4;
+			Memory.setI32(index, Memory.getI32(index) + 1);
 		}
 		
-		return HuffmanTree.fromWeightedAlphabet(weights, MAX_CODE_LENGTH_CODE_LENGTH);
+		var offset = scratchAddr + CODE_LENGTH_OFFSET;
+		HuffmanTree.weightedAlphabetToCodes(offset, offset + 19 * 4, MAX_CODE_LENGTH_CODE_LENGTH);
+		return 19;
 	}
 	
 	
@@ -650,7 +646,44 @@ class DeflateStream
 
 class HuffmanTree
 {
-	public static var scratchAddr;
+	public static var scratchAddr : Int;
+	
+	
+	// Array-based wrapper around fast implementation that uses fast memory.
+	// Provided for convenient testing -- do not use in production (slow)
+	public static function fromWeightedAlphabet(weights : Array<Int>, maxCodeLength : Int)
+	{
+		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+		var oldScratchAddr = scratchAddr;
+		
+		var mem = new ByteArray();
+		mem.length = Std.int(Math.max(weights.length * 4 * 2, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		Memory.select(mem);
+		
+		var offset = 0;
+		var end = offset + weights.length * 4;
+		scratchAddr = end;
+		
+		var i = 0;
+		for (weight in weights) {
+			Memory.setI32(offset + i, weight);
+			i += 4;
+		}
+		
+		weightedAlphabetToCodes(offset, end, maxCodeLength);
+		
+		var result = new Array<Int>();
+		i = offset;
+		while (i < end) {
+			result.push(Memory.getI32(i));
+			i += 4;
+		}
+		
+		Memory.select(oldFastMem);
+		scratchAddr = oldScratchAddr;
+		
+		return result;
+	}
 	
 	
 	
@@ -668,41 +701,37 @@ class HuffmanTree
 		return _weightedAlphabetToCodes(offset, end, maxCodeLength);
 	}
 	
-	private static inline function _weightedAlphabetToCodes(offset, end, maxCodeLength)
+	private static function _weightedAlphabetToCodes(offset, end, maxCodeLength)
 	{
 		if (maxCodeLength > 16) {
 			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");
 		}
 		
-		if (end - offset > 0) {
+		var n = (end - offset) >> 2;		// Number of weights
+		
+		if (n > 0) {
 			// There's at least one weight
 			
-			// Create, at HUFFMAN_SCRATCH_OFFSET, a parallel array of
+			// Create, at scratchAddr, a parallel array of
 			// symbols corresponding to the given weights.
 			// This is necessary since we don't know how large each weight
 			// is (so we can't stuff the symbol in the upper bits)
 			
-			var symbol = 0;
-			var i = scratchAddr;
-			var stop = i + end - offset;
-			while (i < stop) {
-				Memory.setI32(i, symbol);
-				++symbol;
-				i += 4;
+			for (i in 0 ... n) {
+				set32(scratchAddr, i, i);
 			}
 			
 			sortByWeightNonDecreasing(offset, end);
 		}
 		
 		// Calculate unrestricted code lengths
-		calculateOptimalCodeLengths(offset, end);
+		calculateOptimalCodeLengths(offset, n);
 		
 		// Restrict code lengths
 		limitCodeLengths(offset, end, maxCodeLength);
 		
 		// Merge code lengths and symbols into the same 32-bit slots, in scratch memory.
 		// Symbols will be in upper 16 bits
-		var n = (end - offset) >> 2;
 		for (i in 0 ... n) {
 			set32(scratchAddr, i, (get32(scratchAddr, i) << 16) | get32(offset, i));
 		}
@@ -711,11 +740,15 @@ class HuffmanTree
 		// Codelens are already sorted (or nearly, if some codelengths were limited), but
 		// symbols are in increasing order for equal bitlengths.
 		// See http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
-		codelens.sort(byCodeLengthAndSymbolDecreasing);		// TODO: Custom insertion sort
+		sortByCodeLengthAndSymbolDecreasing(scratchAddr, end - offset);
+		
+		for (i in 0 ... n) {
+			Lib.trace(StringTools.hex(get32(scratchAddr, i)));
+		}
 		
 		// Calculate the actual codes (canonical Huffman tree).
 		// Result is stored in lookup table (by symbol)
-		var codes = calculateCanonicalCodes(codelens);
+		calculateCanonicalCodes(scratchAddr, n, offset);
 	}
 	
 	
@@ -745,21 +778,39 @@ class HuffmanTree
 		}
 	}
 	
-	private static function byCodeLengthAndSymbolDecreasing(a, b) {
-		var result = (b & 0xFFFF) - (a & 0xFFFF);
-		if (result == 0) {
-			result = (b >>> 16) - (a >>> 16);
-		}
+	private static inline function sortByCodeLengthAndSymbolDecreasing(offset, len)
+	{
+		// Insertion sort
+		var i, j;
+		var current, currentCodeLen, currentSymbol;
 		
-		return result;
+		i = 4;
+		while (i < len) {
+			current = Memory.getI32(offset + i);
+			currentSymbol = current >>> 16;
+			currentCodeLen = current & 0xFFFF;
+			
+			j = i - 4;
+			while (j >= 0 && compareCodeLengthAndSymbolDecreasing(currentCodeLen, currentSymbol, offset, j)) {
+				Memory.setI32(offset + j + 4, Memory.getI32(offset + j));
+				j -= 4;
+			}
+			Memory.setI32(offset + j + 4, current);
+			
+			i += 4;
+		}
+	}
+	
+	private static inline function compareCodeLengthAndSymbolDecreasing(currentCodeLen, currentSymbol, offset, j)
+	{
+		var codeLenDiff = Memory.getUI16(offset + j) - currentCodeLen;
+		return codeLenDiff == 0 ? Memory.getUI16(offset + j + 2) < currentSymbol : codeLenDiff < 0;
 	}
 	
 	
 	// Transforms weights into a corresponding list of code lengths
-	private static inline function calculateOptimalCodeLengths(offset, end)
+	private static inline function calculateOptimalCodeLengths(offset, n)
 	{
-		var n  = end - offset;
-		
 		// Uses Moffat's in-place algorithm for calculating the unrestricted Huffman code lengths
 		// Adapted from http://ww2.cs.mu.oz.au/~alistair/inplace.c
 		
@@ -887,22 +938,24 @@ class HuffmanTree
 	}
 	
 	
+	// TODO: Add inline -- first fix bug where adding inline causes unbalanced stack error (!)
 	// Input is expected to be in sorted order, first by code length (decreasing), then by symbol (decreasing)
-	private static inline function calculateCanonicalCodes(codelens : Array<Int>) : Array<Int>
+	private static function calculateCanonicalCodes(symbolCodeOffset, n, destOffset)
 	{
 		// Implements algorithm found on Wikipedia: http://en.wikipedia.org/wiki/Canonical_Huffman_code
 		
-		var table = new Array<Int>();
-		if (codelens.length != 0) {
+		if (n != 0) {
 			// Iterate over symbols in reverse order (i.e. increasing codelength)
-			var i = codelens.length - 1;
+			var i = n - 1;
 			var code = 0;
-			var curLen = codelens[i] & 0xFFFF;
+			var curLen = Memory.getUI16(symbolCodeOffset + i * 4);
+			var s;
+			var newLen;
 			while (i >= 0) {
-				var s = codelens[i];
-				var newLen = s & 0xFFFF;
+				s = Memory.getI32(symbolCodeOffset + i * 4);
+				newLen = s & 0xFFFF;
 				code <<= newLen - curLen;
-				table[s >>> 16] = (reverseBits(code, newLen) << 16) | newLen;
+				Memory.setI32(destOffset + (s >>> 16) * 4, (reverseBits(code, newLen) << 16) | newLen);
 				++code;
 				curLen = newLen;
 				if (code >= (1 << curLen)) {
@@ -913,8 +966,6 @@ class HuffmanTree
 				--i;
 			}
 		}
-		
-		return table;
 	}
 	
 	
