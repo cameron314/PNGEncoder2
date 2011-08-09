@@ -343,13 +343,23 @@ class OptimizedPNGEncoder
 			for (n in 0 ... 256) {
 				c = n;
 				
-				for (k in 0 ... 8) {
-					if (c & 1 == 1) {
-						c = 0xedb88320 ^ (c >>> 1);
-					} else {
-						c >>>= 1;
-					}
-				}
+				// 8 iterations
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
+				if (c & 1 == 1) c = 0xedb88320 ^ (c >>> 1);
+				else c >>>= 1;
 				
 				Memory.setI32(n << 2, c);
 			}
