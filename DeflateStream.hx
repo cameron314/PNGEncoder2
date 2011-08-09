@@ -269,10 +269,6 @@ class DeflateStream
 		else {
 			var len = end - offset;
 			
-			// TODO: Optimize overhead
-			
-			//var startTime = Lib.getTimer();
-			
 			// Make sure there's enough room in the output
 			if (maxOutputBufferSize(len) > mem.length - currentAddr) {
 				mem.length = maxOutputBufferSize(len) + currentAddr;
@@ -321,9 +317,6 @@ class DeflateStream
 						writeSymbol(Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
 					}
 				}
-				
-				//var endTime = Lib.getTimer();
-				//trace("DEFLATE block overhead took " + (endTime - startTime) + "ms");
 			}
 			
 			// TODO: Use LZ77 (depending on compression settings)
@@ -701,7 +694,7 @@ class HuffmanTree
 		return _weightedAlphabetToCodes(offset, end, maxCodeLength);
 	}
 	
-	private static function _weightedAlphabetToCodes(offset, end, maxCodeLength)
+	private static inline function _weightedAlphabetToCodes(offset, end, maxCodeLength)
 	{
 		if (maxCodeLength > 16) {
 			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");

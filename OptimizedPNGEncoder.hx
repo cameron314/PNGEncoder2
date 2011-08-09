@@ -293,9 +293,31 @@ class OptimizedPNGEncoder
 		c = crcTable(c ^ (type & 0xFF)) ^ (c >>> 8);
 		
 		if (len != 0) {
-			for (i in CHUNK_START ... CHUNK_START + len) {
-				// TODO: Unroll loop
+			var i = CHUNK_START;
+			var end = CHUNK_START + len;
+			var end16 = end & 0xFFFFFFF0;		// Floor to nearest 16
+			while (i < end16) {
 				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 1)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 2)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 3)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 4)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 5)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 6)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 7)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 8)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 9)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 10)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 11)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 12)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 13)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 14)) ^ (c >>> 8);
+				c = crcTable(c ^ Memory.getByte(i + 15)) ^ (c >>> 8);
+				i += 16;
+			}
+			while (i < end) {
+				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
+				++i;
 			}
 		}
 		c ^= 0xFFFFFFFF;
