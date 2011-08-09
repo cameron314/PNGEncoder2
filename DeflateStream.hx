@@ -737,7 +737,13 @@ class HuffmanTree
 		
 		// Calculate the actual codes (canonical Huffman tree).
 		// Result is stored in lookup table (by symbol)
+		
+		
+		
 		calculateCanonicalCodes(scratchAddr, n, offset);
+		
+		var foo;
+		if (false) {  }		// Causes jump in bytecode -- fixes mysterious stack error
 	}
 	
 	
@@ -927,9 +933,8 @@ class HuffmanTree
 	}
 	
 	
-	// TODO: Add inline -- first fix bug where adding inline causes unbalanced stack error (!)
 	// Input is expected to be in sorted order, first by code length (decreasing), then by symbol (decreasing)
-	private static function calculateCanonicalCodes(symbolCodeOffset, n, destOffset)
+	private static inline function calculateCanonicalCodes(symbolCodeOffset, n, destOffset)
 	{
 		// Implements algorithm found on Wikipedia: http://en.wikipedia.org/wiki/Canonical_Huffman_code
 		

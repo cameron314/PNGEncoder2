@@ -206,6 +206,7 @@ class DeflateStreamTests
 		assert(Memory.getByte(ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH + 32535) == 0xCC);
 	}
 	
+	
 	private static function assert(condition, message = "Assertion failed")
 	{
 		if (!condition) {
