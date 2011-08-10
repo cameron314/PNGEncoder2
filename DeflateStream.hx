@@ -581,11 +581,48 @@ class DeflateStream
 		}
 		
 		var byte;
-		var samples = Math.floor(len / sampleFrequency);
-		for (i in 0 ... samples) {
-			// TODO: Unroll loop
+		var samples = Std.int(len / sampleFrequency);
+		var end16 = samples & 0xFFFFFFF0;		// Floor to nearest 16
+		var i = 0;
+		while (i < end16) {
 			byte = Memory.getByte(offset + i * sampleFrequency);
 			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 1) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 2) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 3) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 4) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 5) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 6) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 7) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 8) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 9) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 10) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 11) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 12) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 13) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 14) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			byte = Memory.getByte(offset + (i + 15) * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			i += 16;
+		}
+		while (i < samples) {
+			byte = Memory.getByte(offset + i * sampleFrequency);
+			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+			++i;
 		}
 		
 		HuffmanTree.weightedAlphabetToCodes(scratchAddr, scratchAddr + 257 * 4, MAX_CODE_LENGTH);
