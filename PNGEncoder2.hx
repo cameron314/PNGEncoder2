@@ -48,7 +48,7 @@ import DeflateStream;
 /**
  * Class that converts BitmapData into a valid PNG
  */
-class OptimizedPNGEncoder
+class PNGEncoder2
 {
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var CHUNK_START = CRC_TABLE_END;
@@ -474,33 +474,3 @@ class OptimizedPNGEncoder
 		return Memory.getI32((index & 0xFF) << 2);
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
