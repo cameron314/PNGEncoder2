@@ -200,10 +200,16 @@ class OptimizedPNGEncoder
 		var end8 = (width & 0xFFFFFFF4) - 8;		// Floor to nearest 8, then subtract 8
 		var j;
 		
+		//var startTime = Lib.getTimer();
+		
 		var imgBytes = img.getPixels(new Rectangle(0, 0, width, height));
 		imgBytes.position = 0;
 		memcpy(imgBytes, scratchAddr);
 		
+		//var endTime = Lib.getTimer();
+		//trace("Blitting pixel data into fast mem took " + (endTime - startTime) + "ms");
+		
+		//startTime = Lib.getTimer();
 		if (img.transparent) {
 			for (i in 0 ... height) {
 				Memory.setByte(addr, 1);		// Sub filter
@@ -340,6 +346,11 @@ class OptimizedPNGEncoder
 			}
 		}
 		
+		//endTime = Lib.getTimer();
+		//trace("Copying pixel data into RGBA format with filter took " + (endTime - startTime) + "ms");
+		
+		//var startTime = Lib.getTimer();
+		
 		var deflateScratchAddrStart = scratchAddrStart + scratchSize;
 		var deflateStream = new DeflateStream(FAST, true, deflateScratchAddrStart, CHUNK_START);
 		deflateStream.fastWriteBlock(addrStart, addrStart + length, true);
@@ -353,6 +364,9 @@ class OptimizedPNGEncoder
 		*/
 		
 		var range = deflateStream.fastFinalize();
+		
+		//var endTime = Lib.getTimer();
+		//trace("Compression took " + (endTime - startTime) + "ms");
 		
 		return range.len();
 	}

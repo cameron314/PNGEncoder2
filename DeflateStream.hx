@@ -228,150 +228,132 @@ class DeflateStream
 	
 	private inline function _fastUpdate(offset : Int, end : Int)
 	{
-		// TODO: Split this out into multiple methods, it's too large
 		var wroteAll = true;
 		
-		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (level == CompressionLevel.UNCOMPRESSED) {
-			// TODO: Speed up uncompressed -- determine if a byte array can copy into itself; if not, unroll memcopy loop
-			var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
-			
-			if (len + 8 > mem.length - currentAddr) {
-				mem.length += len + 8;
-			}
-			
-			if (freshBlock) {
-				// Write uncompressed header info
-				writeShort(len);
-				writeShort(~len);
-			}
-			
-			var i = offset;
-			var cappedEnd = (offset + len);
-			var cappedEndMinus4 = cappedEnd - 4;
-			while (i < cappedEndMinus4) {
-				Memory.setI32(currentAddr, Memory.getI32(i));
-				i += 4;
-				currentAddr += 4;
-			}
-			while (i < offset + len) {
-				Memory.setByte(currentAddr, Memory.getByte(i));
-				++i;
-				++currentAddr;
-			}
-			
-			if (zlib) {
-				updateAdler32(offset, offset + len);
-			}
-			
-			wroteAll = (end - offset == len);
+			wroteAll = _fastUpdateUncompressed(offset, end);
 		}
 		else {
-			var len = end - offset;
-			
-			// Make sure there's enough room in the output
-			if (maxOutputBufferSize(len) > mem.length - currentAddr) {
-				mem.length = maxOutputBufferSize(len) + currentAddr;
-			}
-			
-			if (freshBlock) {
-				// Write Huffman trees into the stream as per RFC 1951
-				
-				literalLengthCodes = createLiteralLengthTree(offset, end);
-				if (distanceCodes == -1) {
-					distanceCodes = createDistanceTree();
-				}
-				
-				var codeLengthCodes = createCodeLengthTree(literalLengthCodes, distanceCodes);
-				
-				// HLIT
-				writeBits(literalLengthCodes - 257, 5);
-				
-				// HDIST
-				if (distanceCodes == 0) {
-					writeBits(0, 5);		// Minimum one distance code
-				}
-				else {
-					writeBits(distanceCodes - 1, 5);
-				}
-				
-				// HCLEN
-				writeBits(codeLengthCodes - 4, 4);
-				
-				// Write code lengths of code length code
-				for (rank in CODE_LENGTH_ORDER) {
-					writeBits(Memory.getUI16(scratchAddr + CODE_LENGTH_OFFSET + rank * 4), 3);
-				}
-				
-				// Write (compressed) code lengths of literal/length codes
-				for (i in 0 ... literalLengthCodes) {
-					writeSymbol(Memory.getUI16(scratchAddr + i * 4), CODE_LENGTH_OFFSET);
-				}
-				
-				// Write (compressed) code lengths of distance codes
-				if (distanceCodes == 0) {
-					writeSymbol(0, CODE_LENGTH_OFFSET);
-				}
-				else {
-					for (i in 0 ... distanceCodes) {
-						writeSymbol(Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
-					}
-				}
-			}
-			
-			// TODO: Use LZ77 (depending on compression settings)
-			
-			// Write data
-			var i = offset;
-			var end32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
-			while (i < end32) {
-				writeSymbol(Memory.getByte(i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				writeSymbol(Memory.getByte(++i));
-				++i;
-			}
-			while (i < end) {
-				writeSymbol(Memory.getByte(i));
-				++i;
-			}
-			
-			if (zlib) {
-				updateAdler32(offset, end);
-			}
+			wroteAll = _fastUpdateCompressed(offset, end);
 		}
 		
 		freshBlock = false;
 		
 		return wroteAll;
+	}
+	
+	private inline function _fastUpdateUncompressed(offset : Int, end : Int) : Bool
+	{
+		// TODO: Speed up uncompressed -- determine if a byte array can copy into itself; if not, unroll memcopy loop
+		var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
+		
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		if (len + 8 > mem.length - currentAddr) {
+			mem.length += len + 8;
+		}
+		
+		if (freshBlock) {
+			// Write uncompressed header info
+			writeShort(len);
+			writeShort(~len);
+		}
+		
+		var i = offset;
+		var cappedEnd = (offset + len);
+		var cappedEndMinus4 = cappedEnd - 4;
+		while (i < cappedEndMinus4) {
+			Memory.setI32(currentAddr, Memory.getI32(i));
+			i += 4;
+			currentAddr += 4;
+		}
+		while (i < offset + len) {
+			Memory.setByte(currentAddr, Memory.getByte(i));
+			++i;
+			++currentAddr;
+		}
+		
+		if (zlib) {
+			updateAdler32(offset, offset + len);
+		}
+		
+		return (end - offset == len);
+	}
+	
+	private inline function _fastUpdateCompressed(offset : Int, end : Int) : Bool
+	{
+		var len = end - offset;
+			
+		// Make sure there's enough room in the output
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		if (maxOutputBufferSize(len) > mem.length - currentAddr) {
+			mem.length = maxOutputBufferSize(len) + currentAddr;
+		}
+		
+		if (freshBlock) {
+			//var startTime = Lib.getTimer();
+			
+			// Write Huffman trees into the stream as per RFC 1951
+			createAndWriteHuffmanTrees(offset, end);
+			
+			//var endTime = Lib.getTimer();
+			//trace("Creating and writing Huffman codes took " + (endTime - startTime) + "ms");
+		}
+		
+		// TODO: Use LZ77 (depending on compression settings)
+		
+		// Write data
+		//var startTime = Lib.getTimer();
+		
+		var i = offset;
+		var end32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
+		while (i < end32) {
+			writeSymbol(Memory.getByte(i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			writeSymbol(Memory.getByte(++i));
+			++i;
+		}
+		while (i < end) {
+			writeSymbol(Memory.getByte(i));
+			++i;
+		}
+		
+		//var endTime = Lib.getTimer();
+		//trace("Writing Huffman-encoded data took " + (endTime - startTime) + "ms");
+		
+		if (zlib) {
+			updateAdler32(offset, end);
+		}
+		
+		return true;
 	}
 	
 	
@@ -445,8 +427,56 @@ class DeflateStream
 	}
 	
 	
+	private inline function createAndWriteHuffmanTrees(offset : Int, end : Int)
+	{
+		literalLengthCodes = createLiteralLengthTree(offset, end);
+		if (distanceCodes == -1) {
+			distanceCodes = createDistanceTree();
+		}
+		
+		var codeLengthCodes = createCodeLengthTree(literalLengthCodes, distanceCodes);
+		
+		//var endTime = Lib.getTimer();
+		//trace("Creating Huffman trees took " + (endTime - startTime) + "ms");
+		//var startTime = Lib.getTimer();
+		
+		// HLIT
+		writeBits(literalLengthCodes - 257, 5);
+		
+		// HDIST
+		if (distanceCodes == 0) {
+			writeBits(0, 5);		// Minimum one distance code
+		}
+		else {
+			writeBits(distanceCodes - 1, 5);
+		}
+		
+		// HCLEN
+		writeBits(codeLengthCodes - 4, 4);
+		
+		// Write code lengths of code length code
+		for (rank in CODE_LENGTH_ORDER) {
+			writeBits(Memory.getUI16(scratchAddr + CODE_LENGTH_OFFSET + rank * 4), 3);
+		}
+		
+		// Write (compressed) code lengths of literal/length codes
+		for (i in 0 ... literalLengthCodes) {
+			writeSymbol(Memory.getUI16(scratchAddr + i * 4), CODE_LENGTH_OFFSET);
+		}
+		
+		// Write (compressed) code lengths of distance codes
+		if (distanceCodes == 0) {
+			writeSymbol(0, CODE_LENGTH_OFFSET);
+		}
+		else {
+			for (i in 0 ... distanceCodes) {
+				writeSymbol(Memory.getUI16(scratchAddr + DISTANCE_OFFSET + i * 4), CODE_LENGTH_OFFSET);
+			}
+		}
+	}
 	
-	// Writes up to 25 bits into the stream (bits must be zero-padded)
+	
+	// Writes up to 25 bits into the stream (bits must be zero-padded to 32 bits)
 	private inline function writeBits(bits : Int, bitCount : Int)
 	{
 		var current = Memory.getByte(currentAddr);
