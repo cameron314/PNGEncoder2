@@ -51,13 +51,14 @@ import DeflateStream;
 class PNGEncoder2
 {
 	private static inline var CRC_TABLE_END = 256 * 4;
-	private static inline var CHUNK_START = CRC_TABLE_END;
+	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
+	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
 	private static var data : ByteArray;
 	
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
-	 * Uses flash.Memory to speed things up
+	 * Highly optimized for speed.
 	 *
 	 * @param image The BitmapData that will be converted into the PNG format.
 	 * @return a ByteArray representing the PNG encoded image data.
@@ -181,22 +182,20 @@ class PNGEncoder2
 		
 		// Size needed to store byte array of bitmap
 		var scratchSize : UInt = width * height * 4;
-		var totalScratchSize = scratchSize + DeflateStream.SCRATCH_MEMORY_SIZE;
 		
 		// Memory layout:
+		// DEFLATE_SCRATCH: Deflate stream scratch memory
 		// CHUNK_START: Deflated data (written last)
-		// CHUNK_START + deflated data buffer: scatch (raw image bytes)
-		// CHUNK_START + deflated data buffer + scratchSize: deflate scratch
-		// CHUNK_START + deflated data buffer + totalScratchSize: Uncompressed PNG-format image data
+		// CHUNK_START + deflated data buffer: scratch (raw image bytes)
+		// CHUNK_START + deflated data buffer + scratchSize: Uncompressed PNG-format image data
 		
-		data.length = Std.int(Math.max(CHUNK_START + DeflateStream.maxOutputBufferSize(length) + totalScratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		data.length = Std.int(Math.max(CHUNK_START + DeflateStream.maxOutputBufferSize(length) + scratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(data);
 		
-		var scratchAddrStart : UInt = CHUNK_START + DeflateStream.maxOutputBufferSize(length);
-		var addrStart : UInt = scratchAddrStart + totalScratchSize;
+		var scratchAddr : Int = CHUNK_START + DeflateStream.maxOutputBufferSize(length);
+		var addrStart : Int = scratchAddr + scratchSize;
 		
 		var addr = addrStart;
-		var scratchAddr = scratchAddrStart;
 		var end8 = (width & 0xFFFFFFF4) - 8;		// Floor to nearest 8, then subtract 8
 		var j;
 		
@@ -351,8 +350,7 @@ class PNGEncoder2
 		
 		//var startTime = Lib.getTimer();
 		
-		var deflateScratchAddrStart = scratchAddrStart + scratchSize;
-		var deflateStream = new DeflateStream(FAST, true, deflateScratchAddrStart, CHUNK_START);
+		var deflateStream = new DeflateStream(FAST, true, DEFLATE_SCRATCH, CHUNK_START);
 		deflateStream.fastWriteBlock(addrStart, addrStart + length, true);
 		
 		// Uncomment if using UNCOMPRESSED level
