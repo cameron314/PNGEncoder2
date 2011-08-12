@@ -396,7 +396,7 @@ class PNGEncoder2
 		if (len != 0) {
 			var i = CHUNK_START;
 			var end = CHUNK_START + len;
-			var end16 = end & 0xFFFFFFF0;		// Floor to nearest 16
+			var end16 = CHUNK_START + (len & 0xFFFFFFF0);	// Floor to nearest 16
 			while (i < end16) {
 				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
 				c = crcTable(c ^ Memory.getByte(i + 1)) ^ (c >>> 8);
