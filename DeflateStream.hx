@@ -284,10 +284,24 @@ class DeflateStream
 		}
 		
 		var cappedEnd = offset + len;
-		for (i in offset ... cappedEnd) {
-			// TODO: Unroll & copy 4x4
+		var cappedEnd32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
+		var i = offset;
+		while (i < cappedEnd32) {
+			Memory.setI32(currentAddr, Memory.getI32(i));
+			Memory.setI32(currentAddr + 4, Memory.getI32(i + 4));
+			Memory.setI32(currentAddr + 8, Memory.getI32(i + 8));
+			Memory.setI32(currentAddr + 12, Memory.getI32(i + 12));
+			Memory.setI32(currentAddr + 16, Memory.getI32(i + 16));
+			Memory.setI32(currentAddr + 20, Memory.getI32(i + 20));
+			Memory.setI32(currentAddr + 24, Memory.getI32(i + 24));
+			Memory.setI32(currentAddr + 28, Memory.getI32(i + 28));
+			currentAddr += 32;
+			i += 32;
+		}
+		while (i < cappedEnd) {
 			Memory.setByte(currentAddr, Memory.getByte(i));
 			++currentAddr;
+			++i;
 		}
 		
 		if (zlib) {
