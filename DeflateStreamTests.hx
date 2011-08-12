@@ -207,6 +207,34 @@ class DeflateStreamTests
 	}
 	
 	
+	/*private static function testCopyingByteArrayIntoItself()
+	{
+		// Can't get this to work in production, with selected byte array
+		
+		// Arrange
+		var bytes = new ByteArray();
+		bytes.length = 6;
+		bytes.writeByte(1);
+		bytes.writeByte(2);
+		bytes.writeByte(3);
+		bytes.position = 0;
+		
+		// Act
+		bytes.readBytes(bytes, 3, 3);
+		
+		// Assert
+		bytes.position = 0;
+		assert(bytes.readByte() & 0xFF == 1);
+		assert(bytes.readByte() & 0xFF == 2);
+		assert(bytes.readByte() & 0xFF == 3);
+		assert(bytes.readByte() & 0xFF == 1);
+		assert(bytes.readByte() & 0xFF == 2);
+		assert(bytes.readByte() & 0xFF == 3);
+		assert(bytes.bytesAvailable == 0);
+	}*/
+	
+	
+	
 	private static function assert(condition, message = "Assertion failed")
 	{
 		if (!condition) {
