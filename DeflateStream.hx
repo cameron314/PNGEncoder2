@@ -71,20 +71,18 @@ As such, here is the zlib license in its entirety (from zlib.h):
 package;
 
 import flash.errors.ArgumentsError;
+import flash.errors.Error;
 import flash.Lib;
 import flash.Memory;
 import flash.system.ApplicationDomain;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
-import flash.Vector;
-import flash.utils.TypedDictionary;
-import haxe.Stack;
 
 enum CompressionLevel {
 	UNCOMPRESSED;		// Fastest
 	FAST;				// Huffman coding only
-	NORMAL;				// Run length encoding
-	MAXIMUM;			// Uses proper LZ77 compression
+	NORMAL;				// Huffman + run length encoding
+	MAXIMUM;			// Huffman + proper LZ77 compression
 }
 
 
@@ -120,6 +118,7 @@ class DeflateStream
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
 	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
 	private static inline var EOB = 256;		// End of block symbol
+	private static inline var MIN_LENGTH = 3;	// Minimum number of repeating symbols to use a length/distance pair
 	
 	private var level : CompressionLevel;
 	private var zlib : Bool;
@@ -246,7 +245,7 @@ class DeflateStream
 	// Updates the current block with the compressed representation of bytes between the from and to indexes
 	// (of selected memory)
 	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
-	public function fastUpdate(offset : Int, end : Int)
+	public function fastUpdate(offset : Int, end : Int) : Bool
 	{
 		return _fastUpdate(offset, end);
 	}
@@ -254,9 +253,9 @@ class DeflateStream
 	
 	private inline function _fastUpdate(offset : Int, end : Int)
 	{
-		var wroteAll = true;
+		var wroteAll;
 		
-		if (level == CompressionLevel.UNCOMPRESSED) {
+		if (level == UNCOMPRESSED) {
 			wroteAll = _fastUpdateUncompressed(offset, end);
 		}
 		else {
@@ -311,10 +310,11 @@ class DeflateStream
 		return (cappedEnd == end);
 	}
 	
+	
 	private inline function _fastUpdateCompressed(offset : Int, end : Int) : Bool
 	{
 		var len = end - offset;
-			
+		
 		// Make sure there's enough room in the output
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (maxOutputBufferSize(len) > mem.length - currentAddr) {
@@ -322,17 +322,31 @@ class DeflateStream
 		}
 		
 		if (freshBlock) {
-			//var startTime = Lib.getTimer();
-			
 			// Write Huffman trees into the stream as per RFC 1951
 			createAndWriteHuffmanTrees(offset, end);
-			
-			//var endTime = Lib.getTimer();
-			//trace("Creating and writing Huffman codes took " + (endTime - startTime) + "ms");
 		}
 		
-		// TODO: Use LZ77 (depending on compression settings)
+		if (zlib) {
+			updateAdler32(offset, end);
+		}
 		
+		if (level == FAST) {
+			return _fastUpdateHuffmanOnly(offset, end, len);
+		}
+		else if (level == NORMAL) {
+			return _fastUpdateRunLength(offset, end, len);
+		}
+		else if (level == MAXIMUM) {
+			return _fastUpdateHuffmanAndLZ77(offset, end, len);
+		}
+		else {
+			throw new Error("Compression level not supported");
+		}
+	}
+	
+	
+	private inline function _fastUpdateHuffmanOnly(offset : Int, end : Int, len : Int)
+	{
 		// Write data
 		//var startTime = Lib.getTimer();
 		
@@ -381,12 +395,53 @@ class DeflateStream
 		//var endTime = Lib.getTimer();
 		//trace("Writing Huffman-encoded data took " + (endTime - startTime) + "ms");
 		
-		if (zlib) {
-			updateAdler32(offset, end);
+		return true;
+	}
+	
+	
+	private static inline var MIN_LENGTH_SYMBOL = 257;
+	
+	private inline function _fastUpdateRunLength(offset : Int, end : Int, len : Int) : Bool
+	{
+		var length;
+		var j;
+		
+		var i = offset;
+		while (i < end) {
+			j = i + 1;
+			while (j < end && Memory.getByte(j) == Memory.getByte(i)) {
+				++j;
+			}
+			
+			// Write the current byte whether it's repeating or not
+			writeSymbol(Memory.getByte(i));
+			++i;
+			if (j - i >= MIN_LENGTH) {
+				length = j - i;
+				while (length > 10) {
+					writeSymbol(MIN_LENGTH_SYMBOL + 10 - MIN_LENGTH);
+					writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
+					i += 10;
+					length -= 10;
+				}
+				if (length >= MIN_LENGTH) {
+					writeSymbol(MIN_LENGTH_SYMBOL + length - MIN_LENGTH);
+					writeSymbol(0, DISTANCE_OFFSET);		// Distance of 1
+					
+					i += length;
+				}
+			}
 		}
 		
 		return true;
 	}
+	
+	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int, len : Int) : Bool
+	{
+		throw new Error("Not implemented");
+		return true;
+	}
+	
 	
 	
 	public inline function endBlock()
@@ -468,9 +523,6 @@ class DeflateStream
 		
 		var codeLengthCodes = createCodeLengthTree(literalLengthCodes, distanceCodes);
 		
-		//var endTime = Lib.getTimer();
-		//trace("Creating Huffman trees took " + (endTime - startTime) + "ms");
-		//var startTime = Lib.getTimer();
 		
 		// HLIT
 		writeBits(literalLengthCodes - 257, 5);
@@ -515,7 +567,7 @@ class DeflateStream
 		current |= bits << bitOffset;
 		Memory.setI32(currentAddr, current);
 		bitOffset += bitCount;
-		currentAddr += bitOffset >>> 3; // divided by 8
+		currentAddr += bitOffset >>> 3; 	// divided by 8
 		bitOffset &= 0x7;		// modulus 8
 	}
 	
@@ -558,7 +610,6 @@ class DeflateStream
 		}
 		
 		if (offset != end) {
-			//do16Adler(offset, offset += ((end - offset) & 0xFFFFFFF0));	// Floor to nearest 16
 			for (i in offset ... end) {
 				s1 += Memory.getByte(i);
 				s2 += s1;
@@ -616,8 +667,9 @@ class DeflateStream
 	
 	private inline function createLiteralLengthTree(offset : Int, end : Int)
 	{
-		// No lengths for now, just literals + EOB
+		var n = 257;		// 256 literals plus EOB
 		
+		// Literals
 		for (value in 0 ... 256) {		// Literals
 			Memory.setI32(scratchAddr + value * 4, 10);
 		}
@@ -625,7 +677,17 @@ class DeflateStream
 		// Weight EOB less than more common literals
 		Memory.setI32(scratchAddr + EOB * 4, 1);
 		
-		// No length codes yet
+		if (level == NORMAL) {
+			// Only lengths without extra bits
+			for (length in 257 ... 265) {
+				Memory.setI32(scratchAddr + length * 4, 100);
+			}
+			
+			n += 8;
+		}
+		else if (level == MAXIMUM) {
+			// TODO: All lengths
+		}
 		
 		
 		// Sample given bytes to estimate literal weights
@@ -687,20 +749,28 @@ class DeflateStream
 			++i;
 		}
 		
-		HuffmanTree.weightedAlphabetToCodes(scratchAddr, scratchAddr + 257 * 4, MAX_CODE_LENGTH);
+		HuffmanTree.weightedAlphabetToCodes(scratchAddr, scratchAddr + n * 4, MAX_CODE_LENGTH);
 		
-		return 257;
+		return n;
 	}
 	
 	
 	private inline function createDistanceTree()
 	{
-		// No distances yet
-		
 		var offset = scratchAddr + DISTANCE_OFFSET;
-		HuffmanTree.weightedAlphabetToCodes(offset, offset, MAX_CODE_LENGTH);
+		var n = 0;
 		
-		return 0;
+		if (level == NORMAL) {
+			Memory.setI32(offset, 100);
+			++n;
+		}
+		else if (level == MAXIMUM) {
+			// TODO
+		}
+		
+		HuffmanTree.weightedAlphabetToCodes(offset, offset + n * 4, MAX_CODE_LENGTH);
+		
+		return n;
 	}
 	
 	
@@ -914,7 +984,7 @@ class HuffmanTree
         var avbl;                  /* number of available nodes */
         var used;                  /* number of internal nodes */
         var dpth;                  /* current depth of leaves */
-
+		
         /* check for pathological cases */
         if (n!=0) {
 			if (n != 1) {
@@ -929,7 +999,7 @@ class HuffmanTree
 					} else {
 						set32(offset, next, get32(offset, leaf++));
 					}
-
+					
 					/* add on the second item */
 					if (leaf>=n || (root < next && get32(offset, root) < get32(offset, leaf))) {
 						set32(offset, next, get32(offset, next) + get32(offset, root));
@@ -963,7 +1033,7 @@ class HuffmanTree
 				}
 			}
 			else {		// n == 1
-				set32(offset, 0, 0);
+				set32(offset, 0, 1);
 			}
 		}
 	}
