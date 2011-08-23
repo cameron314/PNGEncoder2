@@ -145,35 +145,47 @@ class DeflateStream
 	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
 	
 	
-	// If scratchAddr and startAddr are set, that signifies that memory has already been selected
-	// outside of this DeflateStream, for use with it. Up to SCRATCH_MEMORY_SIZE
-	// bytes will be used at scratchAddr. If scratchAddr is not given, then no manual
-	// memory management is required. If scratchAddr is past startAddr, then it is the
-	// caller's reponsiblity to ensure that there's enough room between startAddr and
-	// scratchAddr for the compressed data.
-	public function new(level : CompressionLevel, writeZLIBInfo = false, scratchAddr = -1, startAddr = 0)
+	// Returns a new deflate stream (assumes no other code uses flash.Memory for
+	// the duration of the lifetime of the stream). No manual memory management
+	// is required.
+	public static function create(level : CompressionLevel, writeZLIBInfo = false) : DeflateStream
+	{
+		var mem = new ByteArray();
+		mem.length = ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH;
+		Memory.select(mem);
+		
+		return createEx(level, 0, SCRATCH_MEMORY_SIZE, writeZLIBInfo);
+	}
+	
+	// Returns a new deflate stream configured to use pre-selected memory (already
+	// selected with flash.Memory). The size of the pre-selected memory will
+	// automatically expand as needed to accomodate the stream as it grows.
+	// Up to SCRATCH_MEMORY_SIZE bytes will be used at scratchAddr.
+	// If scratchAddr is past startAddr, then it is the caller's reponsiblity to
+	// ensure that there's enough room between startAddr and scratchAddr for all of
+	// the compressed data (thus ensuring that no automatic expansion is needed) --
+	// use maxOutputBufferSize() to calculate how much space is needed.
+	public static function createEx(level : CompressionLevel, scratchAddr : Int, startAddr : Int, writeZLIBInfo = false) : DeflateStream
+	{
+		return new DeflateStream(level, writeZLIBInfo, scratchAddr, startAddr);
+	}
+	
+	
+	private function new(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
 	{
 		this.level = level;
 		this.zlib = writeZLIBInfo;
-		
-		if (scratchAddr < 0) {
-			scratchAddr = 0;
-			startAddr = SCRATCH_MEMORY_SIZE;
-			var mem = new ByteArray();
-			mem.length = ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH;
-			Memory.select(mem);
-		}
-		
 		this.scratchAddr = scratchAddr;
 		this.startAddr = startAddr;
 		this.currentAddr = startAddr;
 		
 		HuffmanTree.scratchAddr = scratchAddr + HUFFMAN_SCRATCH_OFFSET;
 		
-		// Ensure at least 3 bytes for possible zlib data and block header bits
-		// writeBits requires 3 bytes past what is needed
+		// Ensure at least 10 bytes for possible zlib data, block header bits,
+		// and final empty block (if finalized without any data written).
+		// writeBits requires up to 3 bytes past what is needed
 		var mem = ApplicationDomain.currentDomain.domainMemory;
-		var minLength : UInt = startAddr + 6;
+		var minLength : UInt = startAddr + 13;
 		if (mem.length < minLength) {
 			mem.length = minLength;
 		}

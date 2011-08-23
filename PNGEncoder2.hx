@@ -351,7 +351,7 @@ class PNGEncoder2
 		
 		//var startTime = Lib.getTimer();
 		
-		var deflateStream = new DeflateStream(NORMAL, true, DEFLATE_SCRATCH, CHUNK_START);
+		var deflateStream = DeflateStream.createEx(NORMAL, DEFLATE_SCRATCH, CHUNK_START, true);
 		deflateStream.fastWriteBlock(addrStart, addrStart + length, true);
 		
 		// Uncomment if using UNCOMPRESSED level

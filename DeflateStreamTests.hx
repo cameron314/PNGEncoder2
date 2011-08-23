@@ -66,7 +66,7 @@ class DeflateStreamTests
 		
 		bytes.position = 0;
 		
-		var stream = new DeflateStream(FAST);
+		var stream = DeflateStream.create(FAST);
 		
 		// Act
 		stream.writeBlock(bytes, true);
@@ -91,7 +91,7 @@ class DeflateStreamTests
 		
 		bytes.position = 0;
 		
-		var stream = new DeflateStream(FAST, true);
+		var stream = DeflateStream.create(FAST, true);
 		
 		// Act
 		stream.writeBlock(bytes, true);
@@ -116,7 +116,7 @@ class DeflateStreamTests
 		
 		bytes.position = 0;
 		
-		var stream = new DeflateStream(UNCOMPRESSED, true);
+		var stream = DeflateStream.create(UNCOMPRESSED, true);
 		
 		// Act
 		stream.writeBlock(bytes, true);
@@ -140,7 +140,7 @@ class DeflateStreamTests
 		}
 		bytes.position = 0;
 		
-		var stream = new DeflateStream(FAST, true);
+		var stream = DeflateStream.create(FAST, true);
 		
 		// Act
 		stream.writeBlock(bytes, true);
