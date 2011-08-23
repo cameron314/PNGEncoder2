@@ -105,20 +105,26 @@ class MemoryRange {
 class DeflateStream
 {
 	private static inline var MAX_SYMBOLS_IN_TREE = 286;
+	private static inline var LENGTH_CODES = 29;
+	private static inline var MIN_LENGTH = 3;	// Minimum number of repeating symbols to use a length/distance pair
+	private static inline var MAX_LENGTH = 258;
+	private static inline var LENGTHS = 256;
 	
 	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
-	public static inline var SCRATCH_MEMORY_SIZE : Int = (32 + 19 + MAX_SYMBOLS_IN_TREE * 2) * 4;		// Bytes
+	public static inline var SCRATCH_MEMORY_SIZE : Int = (32 + 19 + MAX_SYMBOLS_IN_TREE * 2 + LENGTHS + MIN_LENGTH) * 4;		// Bytes
 	
 	private static inline var DISTANCE_OFFSET : Int = MAX_SYMBOLS_IN_TREE * 4;		// Where distance lookup is stored in scratch memory
 	private static inline var CODE_LENGTH_OFFSET : Int = DISTANCE_OFFSET + 32 * 4;
 	private static inline var HUFFMAN_SCRATCH_OFFSET : Int = CODE_LENGTH_OFFSET + 19 * 4;
+	private static inline var LENGTH_EXTRA_BITS_OFFSET : Int = HUFFMAN_SCRATCH_OFFSET + MAX_SYMBOLS_IN_TREE * 4;
+	// Next offset: LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4
+	
 	
 	private static inline var ADDLER_MAX : Int = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : Int = 15;
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
 	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
 	private static inline var EOB = 256;		// End of block symbol
-	private static inline var MIN_LENGTH = 3;	// Minimum number of repeating symbols to use a length/distance pair
 	
 	private var level : CompressionLevel;
 	private var zlib : Bool;
@@ -181,6 +187,8 @@ class DeflateStream
 			writeByte(0x78);		// CMF with compression method 8 (deflate) 32K sliding window
 			writeByte(0x9C);		// FLG: Check bits, no dict, default algorithm
 		}
+		
+		setupStaticScratchMem();
 	}
 	
 	
@@ -399,17 +407,16 @@ class DeflateStream
 	}
 	
 	
-	private static inline var MIN_LENGTH_SYMBOL = 257;
-	
 	private inline function _fastUpdateRunLength(offset : Int, end : Int, len : Int) : Bool
 	{
 		var length;
+		var lengthInfo;
 		var j;
 		
 		var i = offset;
 		while (i < end) {
 			j = i + 1;
-			while (j < end && Memory.getByte(j) == Memory.getByte(i)) {
+			while (j < end && Memory.getByte(j) == Memory.getByte(i) && j - i <= MAX_LENGTH) {
 				++j;
 			}
 			
@@ -418,18 +425,12 @@ class DeflateStream
 			++i;
 			if (j - i >= MIN_LENGTH) {
 				length = j - i;
-				while (length > 10) {
-					writeSymbol(MIN_LENGTH_SYMBOL + 10 - MIN_LENGTH);
-					writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
-					i += 10;
-					length -= 10;
-				}
-				if (length >= MIN_LENGTH) {
-					writeSymbol(MIN_LENGTH_SYMBOL + length - MIN_LENGTH);
-					writeSymbol(0, DISTANCE_OFFSET);		// Distance of 1
-					
-					i += length;
-				}
+				lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
+				writeSymbol(lengthInfo >>> 8);
+				writeBits(length - (lengthInfo & 0x1F), (lengthInfo & 0xFF) >>> 5);
+				writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
+				
+				i += length;
 			}
 		}
 		
@@ -511,6 +512,47 @@ class DeflateStream
 		// header/footer data (think 285 length/literal codes at 7 bits max each),
 		// rounded up for good luck.
 		return uncompressedByteCount * 2 + 300 * blockCount;
+	}
+	
+	
+	private inline function setupStaticScratchMem()
+	{
+		if (level == NORMAL || level == MAXIMUM) {
+			// Write length code, extra bits and lower bound that must be subtracted to
+			// get the extra bits value for all the possible lengths.
+			// This information is stuffed into 4 bytes byte per length, addressable
+			// by Memory.getI32(LENGTH_EXTRA_BITS_OFFSET + length * 4).
+			// Upper 3 bytes: Length code
+			// Lower byte: The upper 3 bits are the extra bit count, and the lower 5 are
+			// the lower bound.
+			
+			var offset = scratchAddr + LENGTH_EXTRA_BITS_OFFSET;
+			
+			// 3 ... 10:
+			Memory.setI32(offset + 3 * 4, (257 << 8) | 3);
+			Memory.setI32(offset + 4 * 4, (258 << 8) | 4);
+			Memory.setI32(offset + 5 * 4, (259 << 8) | 5);
+			Memory.setI32(offset + 6 * 4, (260 << 8) | 6);
+			Memory.setI32(offset + 7 * 4, (261 << 8) | 7);
+			Memory.setI32(offset + 8 * 4, (262 << 8) | 8);
+			Memory.setI32(offset + 9 * 4, (263 << 8) | 9);
+			Memory.setI32(offset + 10 * 4, (264 << 8) | 10);
+			
+			// 11 ... 257:
+			var base = 11;
+			var symbol = 265;
+			for (extraBits in 1 ... 6) {
+				for (_ in 0 ... 4) {
+					for (i in base ... base + (1 << extraBits)) {
+						Memory.setI32(offset + i * 4, (symbol << 8) | (extraBits << 5) | base);
+					}
+					base += 1 << extraBits;
+					++symbol;
+				}
+			}
+			
+			Memory.setI32(offset + 258 * 4, (285 << 8) | 258);		// 258
+		}
 	}
 	
 	
@@ -678,15 +720,14 @@ class DeflateStream
 		Memory.setI32(scratchAddr + EOB * 4, 1);
 		
 		if (level == NORMAL) {
-			// Only lengths without extra bits
-			for (length in 257 ... 265) {
+			for (length in 257 ... 286) {
 				Memory.setI32(scratchAddr + length * 4, 100);
 			}
 			
-			n += 8;
+			n += LENGTH_CODES;
 		}
 		else if (level == MAXIMUM) {
-			// TODO: All lengths
+			// TODO
 		}
 		
 		
@@ -865,10 +906,6 @@ class HuffmanTree
 	
 	private static inline function _weightedAlphabetToCodes(offset, end, maxCodeLength)
 	{
-		if (maxCodeLength > 16) {
-			throw new ArgumentsError("Maximum code length must fit into 2 bytes or less");
-		}
-		
 		var n = (end - offset) >> 2;		// Number of weights
 		
 		if (n > 0) {

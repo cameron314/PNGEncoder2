@@ -72,6 +72,7 @@ class PNGEncoder2
 	private static inline function _encode(img : BitmapData) : ByteArray
 	{
 		//var outerStartTime = Lib.getTimer();
+		
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
