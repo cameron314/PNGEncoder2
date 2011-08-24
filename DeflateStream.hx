@@ -110,7 +110,6 @@ class DeflateStream
 	private static inline var MAX_LENGTH = 258;
 	private static inline var LENGTHS = 256;
 	
-	public static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
 	public static inline var SCRATCH_MEMORY_SIZE : Int = (32 + 19 + MAX_SYMBOLS_IN_TREE * 2 + LENGTHS + MIN_LENGTH) * 4;		// Bytes
 	
 	private static inline var DISTANCE_OFFSET : Int = MAX_SYMBOLS_IN_TREE * 4;		// Where distance lookup is stored in scratch memory
@@ -120,6 +119,7 @@ class DeflateStream
 	// Next offset: LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4
 	
 	
+	private static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
 	private static inline var ADDLER_MAX : Int = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : Int = 15;
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
@@ -131,7 +131,8 @@ class DeflateStream
 	private var startAddr : UInt;
 	private var currentAddr : Int;
 	private var scratchAddr : Int;
-	private var freshBlock : Bool;
+	private var blockInProgress : Bool;
+	private var blockStartAddr : Int;
 	
 	private var literalLengthCodes : Int;		// Count
 	private var distanceCodes : Int;			// Count
@@ -143,6 +144,7 @@ class DeflateStream
 	private var bitOffset : Int;
 	
 	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
+	// TODO: Make sure all public methods are *not* inlined (they wouldn't be accessible from a swc in flash)
 	
 	
 	// Returns a new deflate stream (assumes no other code uses flash.Memory for
@@ -173,6 +175,12 @@ class DeflateStream
 	
 	private function new(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
 	{
+		_new(level, writeZLIBInfo, scratchAddr, startAddr);
+	}
+	
+	
+	private inline function _new(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
+	{
 		this.level = level;
 		this.zlib = writeZLIBInfo;
 		this.scratchAddr = scratchAddr;
@@ -182,16 +190,18 @@ class DeflateStream
 		HuffmanTree.scratchAddr = scratchAddr + HUFFMAN_SCRATCH_OFFSET;
 		
 		// Ensure at least 10 bytes for possible zlib data, block header bits,
-		// and final empty block (if finalized without any data written).
+		// and final empty block.
 		// writeBits requires up to 3 bytes past what is needed
 		var mem = ApplicationDomain.currentDomain.domainMemory;
-		var minLength : UInt = startAddr + 13;
+		var minLength : UInt = startAddr + 15;
 		if (mem.length < minLength) {
 			mem.length = minLength;
 		}
 		
 		distanceCodes = -1;
-		freshBlock = false;
+		blockInProgress = false;
+		blockStartAddr = currentAddr;
+		bitOffset = 0;
 		s1 = 1;
 		s2 = 0;
 		
@@ -201,51 +211,47 @@ class DeflateStream
 		}
 		
 		setupStaticScratchMem();
-	}
-	
-	
-	// Helper method. Same as sequentially calling beginBlock, update, and endBlock
-	public inline function writeBlock(bytes : ByteArray, lastBlock = false)
-	{
-		beginBlock(lastBlock);
-		var wroteAll = update(bytes);
-		endBlock();
-		return wroteAll;
-	}
-	
-	
-	// Helper method. Same as sequentially calling beginBlock, fastUpdate, and endBlock
-	public inline function fastWriteBlock(offset : Int, end : Int, lastBlock = false)
-	{
-		beginBlock(lastBlock);
-		var wroteAll = fastUpdate(offset, end);
-		endBlock();
-		return wroteAll;
-	}
-	
-	
-	public inline function beginBlock(lastBlock = false)
-	{
-		freshBlock = true;
 		
-		bitOffset = 0;
+		// writeBits relies on first byte being initiazed to 0
+		Memory.setByte(currentAddr, 0);
+	}
+	
+	
+	// Forces the current block to end (subsequent data will be written to a new block).
+	// Advanced method -- not needed for everyday use
+	public function newBlock()
+	{
+		if (blockInProgress) {
+			endBlock();
+		}
+	}
+	
+	
+	private inline function beginBlock(lastBlock = false)
+	{
+		blockInProgress = true;
 		
 		if (level == CompressionLevel.UNCOMPRESSED) {
-			writeByte(lastBlock ? 1 : 0);		// Uncompressed
+			// Write BFINAL bit and BTYPE (00)
+			writeBits(lastBlock ? 1 : 0, 3);		// Uncompressed
+			
+			// Align to byte boundary
+			if (bitOffset > 0) {
+				writeBits(0, 8 - bitOffset);
+			}
 		}
 		else {
-			// writeBits relies on first byte being initiazed to 0
-			Memory.setByte(currentAddr, 0);
-			
 			writeBits(4 | (lastBlock ? 1 : 0), 3);		// Dynamic Huffman tree compression
 		}
+		
+		blockStartAddr = currentAddr;
 	}
 	
 	
-	public inline function update(bytes : ByteArray)
+	public function update(bytes : ByteArray)
 	{
 		// Put input bytes into fast mem *after* a gap for output bytes.
-		// This allows multiple calls to update without needing to pre-delcare an input
+		// This allows multiple calls to update without needing to pre-declare an input
 		// buffer big enough (i.e. streaming).
 		var offset = currentAddr + maxOutputBufferSize(bytes.bytesAvailable);
 		var end = offset + bytes.bytesAvailable;
@@ -262,76 +268,81 @@ class DeflateStream
 	}
 	
 	
-	// Updates the current block with the compressed representation of bytes between the from and to indexes
+	// Updates the stream with a compressed representation of bytes between the from and to indexes
 	// (of selected memory)
-	// Only a maximum of MAX_UNCOMPRESSED_BYTES_PER_BLOCK bytes will be written when using UNCOMPRESSED level
-	public function fastUpdate(offset : Int, end : Int) : Bool
+	public function fastUpdate(offset : Int, end : Int)
 	{
-		return _fastUpdate(offset, end);
+		_fastUpdate(offset, end);
 	}
 	
 	
 	private inline function _fastUpdate(offset : Int, end : Int)
 	{
-		var wroteAll;
-		
 		if (level == UNCOMPRESSED) {
-			wroteAll = _fastUpdateUncompressed(offset, end);
+			_fastUpdateUncompressed(offset, end);
 		}
 		else {
-			wroteAll = _fastUpdateCompressed(offset, end);
+			_fastUpdateCompressed(offset, end);
 		}
-		
-		freshBlock = false;
-		
-		return wroteAll;
 	}
 	
-	private inline function _fastUpdateUncompressed(offset : Int, end : Int) : Bool
+	// Pre-condition: blockInProgress should always be false
+	private inline function _fastUpdateUncompressed(offset : Int, end : Int)
 	{
-		var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
-		
-		var mem = ApplicationDomain.currentDomain.domainMemory;
-		if (len + 8 > mem.length - currentAddr) {
-			mem.length += len + 8;
+		if (zlib) {
+			updateAdler32(offset, end);
 		}
 		
-		if (freshBlock) {
+		// Ensure room to start the blocks and write all data
+		var blockOverhead = 8;		// 1B block header + 4B header + 3B max needed by writeBits
+		var totalLen : Int = end - offset;
+		var blocks = Std.int(totalLen / MAX_UNCOMPRESSED_BYTES_PER_BLOCK) + 1;
+		var minimumSize : UInt = totalLen + blockOverhead * blocks;
+		var mem = ApplicationDomain.currentDomain.domainMemory;
+		var freeSpace : UInt = mem.length - currentAddr;
+		if (freeSpace < minimumSize) {
+			mem.length = currentAddr + minimumSize;
+		}
+		
+		while (end - offset > 0) {
+			var len = Std.int(Math.min(end - offset, MAX_UNCOMPRESSED_BYTES_PER_BLOCK));
+			
+			beginBlock();
+			
 			// Write uncompressed header info
 			writeShort(len);
 			writeShort(~len);
+			
+			// Write data (loop unrolled for speed)
+			var cappedEnd = offset + len;
+			var cappedEnd32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
+			var i = offset;
+			while (i < cappedEnd32) {
+				Memory.setI32(currentAddr, Memory.getI32(i));
+				Memory.setI32(currentAddr + 4, Memory.getI32(i + 4));
+				Memory.setI32(currentAddr + 8, Memory.getI32(i + 8));
+				Memory.setI32(currentAddr + 12, Memory.getI32(i + 12));
+				Memory.setI32(currentAddr + 16, Memory.getI32(i + 16));
+				Memory.setI32(currentAddr + 20, Memory.getI32(i + 20));
+				Memory.setI32(currentAddr + 24, Memory.getI32(i + 24));
+				Memory.setI32(currentAddr + 28, Memory.getI32(i + 28));
+				currentAddr += 32;
+				i += 32;
+			}
+			while (i < cappedEnd) {
+				Memory.setByte(currentAddr, Memory.getByte(i));
+				++currentAddr;
+				++i;
+			}
+			
+			endBlock();
+			
+			offset += len;
 		}
-		
-		var cappedEnd = offset + len;
-		var cappedEnd32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
-		var i = offset;
-		while (i < cappedEnd32) {
-			Memory.setI32(currentAddr, Memory.getI32(i));
-			Memory.setI32(currentAddr + 4, Memory.getI32(i + 4));
-			Memory.setI32(currentAddr + 8, Memory.getI32(i + 8));
-			Memory.setI32(currentAddr + 12, Memory.getI32(i + 12));
-			Memory.setI32(currentAddr + 16, Memory.getI32(i + 16));
-			Memory.setI32(currentAddr + 20, Memory.getI32(i + 20));
-			Memory.setI32(currentAddr + 24, Memory.getI32(i + 24));
-			Memory.setI32(currentAddr + 28, Memory.getI32(i + 28));
-			currentAddr += 32;
-			i += 32;
-		}
-		while (i < cappedEnd) {
-			Memory.setByte(currentAddr, Memory.getByte(i));
-			++currentAddr;
-			++i;
-		}
-		
-		if (zlib) {
-			updateAdler32(offset, cappedEnd);
-		}
-		
-		return (cappedEnd == end);
 	}
 	
 	
-	private inline function _fastUpdateCompressed(offset : Int, end : Int) : Bool
+	private inline function _fastUpdateCompressed(offset : Int, end : Int)
 	{
 		var len = end - offset;
 		
@@ -341,7 +352,9 @@ class DeflateStream
 			mem.length = maxOutputBufferSize(len) + currentAddr;
 		}
 		
-		if (freshBlock) {
+		if (!blockInProgress) {
+			beginBlock();
+			
 			// Write Huffman trees into the stream as per RFC 1951
 			createAndWriteHuffmanTrees(offset, end);
 		}
@@ -351,13 +364,13 @@ class DeflateStream
 		}
 		
 		if (level == FAST) {
-			return _fastUpdateHuffmanOnly(offset, end, len);
+			_fastUpdateHuffmanOnly(offset, end, len);
 		}
 		else if (level == NORMAL) {
-			return _fastUpdateRunLength(offset, end, len);
+			_fastUpdateRunLength(offset, end, len);
 		}
 		else if (level == MAXIMUM) {
-			return _fastUpdateHuffmanAndLZ77(offset, end, len);
+			_fastUpdateHuffmanAndLZ77(offset, end, len);
 		}
 		else {
 			throw new Error("Compression level not supported");
@@ -367,7 +380,7 @@ class DeflateStream
 	
 	private inline function _fastUpdateHuffmanOnly(offset : Int, end : Int, len : Int)
 	{
-		// Write data
+		// Write data (loop unrolled for speed)
 		//var startTime = Lib.getTimer();
 		
 		var i = offset;
@@ -414,12 +427,10 @@ class DeflateStream
 		
 		//var endTime = Lib.getTimer();
 		//trace("Writing Huffman-encoded data took " + (endTime - startTime) + "ms");
-		
-		return true;
 	}
 	
 	
-	private inline function _fastUpdateRunLength(offset : Int, end : Int, len : Int) : Bool
+	private inline function _fastUpdateRunLength(offset : Int, end : Int, len : Int)
 	{
 		var length;
 		var lengthInfo;
@@ -432,9 +443,10 @@ class DeflateStream
 				++j;
 			}
 			
-			// Write the current byte whether it's repeating or not
+			// Write the current byte whether it repeats or not
 			writeSymbol(Memory.getByte(i));
 			++i;
+			
 			if (j - i >= MIN_LENGTH) {
 				length = j - i;
 				lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
@@ -445,31 +457,42 @@ class DeflateStream
 				i += length;
 			}
 		}
-		
-		return true;
 	}
 	
-	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int, len : Int) : Bool
+	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int, len : Int)
 	{
 		throw new Error("Not implemented");
-		return true;
 	}
 	
 	
 	
-	public inline function endBlock()
+	private inline function endBlock()
 	{
 		if (level != UNCOMPRESSED) {
 			writeSymbol(EOB);
 		}
+		
+		blockInProgress = false;
+	}
+	
+	private inline function currentBlockLength()
+	{
+		return blockInProgress ? currentAddr - blockStartAddr : 0;
 	}
 	
 	
-	public inline function writeEmptyBlock(lastBlock : Bool)
+	private inline function writeEmptyBlock(lastBlock : Bool)
 	{
+		if (blockInProgress) {
+			endBlock();
+		}
+		
 		var currentLevel = level;
 		level = UNCOMPRESSED;
-		fastWriteBlock(0, 0, lastBlock);
+		beginBlock(lastBlock);
+		writeShort(0);
+		writeShort(~0);
+		endBlock();
 		level = currentLevel;
 	}
 	
@@ -499,6 +522,11 @@ class DeflateStream
 	// Call only once. After called, no other methods should be called
 	public inline function fastFinalize() : MemoryRange
 	{
+		// It's easier to always write one empty block at the end than to force
+		// the caller to know in advance which block is the last one.
+		writeEmptyBlock(true);
+		
+		// Align to byte boundary
 		if (bitOffset > 0) {
 			++currentAddr;		// active byte is now last byte
 		}

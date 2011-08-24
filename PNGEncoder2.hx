@@ -45,6 +45,8 @@ import flash.utils.Endian;
 import DeflateStream;
 
 
+// TODO: Make sure all public methods are *not* inlined (they wouldn't be accessible from a swc in flash)
+
 /**
  * Class that converts BitmapData into a valid PNG
  */
@@ -352,15 +354,7 @@ class PNGEncoder2
 		//var startTime = Lib.getTimer();
 		
 		var deflateStream = DeflateStream.createEx(NORMAL, DEFLATE_SCRATCH, CHUNK_START, true);
-		deflateStream.fastWriteBlock(addrStart, addrStart + length, true);
-		
-		// Uncomment if using UNCOMPRESSED level
-		/*while (!deflateStream.fastWriteBlock(addrStart, addrStart + length, false)) {
-			addrStart += DeflateStream.MAX_UNCOMPRESSED_BYTES_PER_BLOCK;
-			length -= DeflateStream.MAX_UNCOMPRESSED_BYTES_PER_BLOCK;
-		}
-		deflateStream.writeEmptyBlock(true);
-		*/
+		deflateStream.fastUpdate(addrStart, addrStart + length);
 		
 		var range = deflateStream.fastFinalize();
 		
