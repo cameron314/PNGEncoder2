@@ -192,10 +192,12 @@ class PNGEncoder2
 		// CHUNK_START + deflated data buffer: scratch (raw image bytes)
 		// CHUNK_START + deflated data buffer + scratchSize: Uncompressed PNG-format image data
 		
-		data.length = Std.int(Math.max(CHUNK_START + DeflateStream.maxOutputBufferSize(length) + scratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		var deflateStream = DeflateStream.createEx(NORMAL, DEFLATE_SCRATCH, CHUNK_START, true);
+		
+		data.length = Std.int(Math.max(CHUNK_START + deflateStream.maxOutputBufferSize(length) + scratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(data);
 		
-		var scratchAddr : Int = CHUNK_START + DeflateStream.maxOutputBufferSize(length);
+		var scratchAddr : Int = CHUNK_START + deflateStream.maxOutputBufferSize(length);
 		var addrStart : Int = scratchAddr + scratchSize;
 		
 		var addr = addrStart;
@@ -353,9 +355,7 @@ class PNGEncoder2
 		
 		//var startTime = Lib.getTimer();
 		
-		var deflateStream = DeflateStream.createEx(NORMAL, DEFLATE_SCRATCH, CHUNK_START, true);
 		deflateStream.fastUpdate(addrStart, addrStart + length);
-		
 		var range = deflateStream.fastFinalize();
 		
 		//var endTime = Lib.getTimer();

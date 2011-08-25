@@ -8,6 +8,9 @@ import flash.utils.ByteArray;
 
 class DeflateStreamTests
 {
+	// TODO: Write more tests to cover large streams, discarding the output buffer,
+	// and multiple writes -- test all compression levels
+	
 	public static function run()
 	{
 		testBufferResize();

@@ -144,7 +144,6 @@ class DeflateStream
 	private var bitOffset : Int;
 	
 	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
-	// TODO: Make sure all public methods are *not* inlined (they wouldn't be accessible from a swc in flash)
 	
 	
 	// Returns a new deflate stream (assumes no other code uses flash.Memory for
@@ -217,43 +216,14 @@ class DeflateStream
 	}
 	
 	
-	// Forces the current block to end (subsequent data will be written to a new block).
-	// Advanced method -- not needed for everyday use
-	public function newBlock()
-	{
-		if (blockInProgress) {
-			endBlock();
-		}
-	}
-	
-	
-	private inline function beginBlock(lastBlock = false)
-	{
-		blockInProgress = true;
-		
-		if (level == CompressionLevel.UNCOMPRESSED) {
-			// Write BFINAL bit and BTYPE (00)
-			writeBits(lastBlock ? 1 : 0, 3);		// Uncompressed
-			
-			// Align to byte boundary
-			if (bitOffset > 0) {
-				writeBits(0, 8 - bitOffset);
-			}
-		}
-		else {
-			writeBits(4 | (lastBlock ? 1 : 0), 3);		// Dynamic Huffman tree compression
-		}
-		
-		blockStartAddr = currentAddr;
-	}
-	
-	
+	// For best compression, write large chunks of data at once (there
+	// is no internal buffer for performance reasons)
 	public function update(bytes : ByteArray)
 	{
 		// Put input bytes into fast mem *after* a gap for output bytes.
 		// This allows multiple calls to update without needing to pre-declare an input
 		// buffer big enough (i.e. streaming).
-		var offset = currentAddr + maxOutputBufferSize(bytes.bytesAvailable);
+		var offset = currentAddr + _maxOutputBufferSize(bytes.bytesAvailable);
 		var end = offset + bytes.bytesAvailable;
 		
 		// Reserve space
@@ -268,8 +238,10 @@ class DeflateStream
 	}
 	
 	
-	// Updates the stream with a compressed representation of bytes between the from and to indexes
-	// (of selected memory)
+	// Updates the stream with a compressed representation of bytes
+	// between the from and to indexes (of selected memory).
+	// For best compression, write large chunks of data at once (there
+	// is no internal buffer for performance reasons)
 	public function fastUpdate(offset : Int, end : Int)
 	{
 		_fastUpdate(offset, end);
@@ -296,7 +268,7 @@ class DeflateStream
 		// Ensure room to start the blocks and write all data
 		var blockOverhead = 8;		// 1B block header + 4B header + 3B max needed by writeBits
 		var totalLen : Int = end - offset;
-		var blocks = Std.int(totalLen / MAX_UNCOMPRESSED_BYTES_PER_BLOCK) + 1;
+		var blocks = Math.ceil(totalLen / MAX_UNCOMPRESSED_BYTES_PER_BLOCK);
 		var minimumSize : UInt = totalLen + blockOverhead * blocks;
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		var freeSpace : UInt = mem.length - currentAddr;
@@ -348,8 +320,8 @@ class DeflateStream
 		
 		// Make sure there's enough room in the output
 		var mem = ApplicationDomain.currentDomain.domainMemory;
-		if (maxOutputBufferSize(len) > mem.length - currentAddr) {
-			mem.length = maxOutputBufferSize(len) + currentAddr;
+		if (_maxOutputBufferSize(len) > mem.length - currentAddr) {
+			mem.length = _maxOutputBufferSize(len) + currentAddr;
 		}
 		
 		if (!blockInProgress) {
@@ -465,6 +437,26 @@ class DeflateStream
 	}
 	
 	
+	private inline function beginBlock(lastBlock = false)
+	{
+		blockInProgress = true;
+		
+		if (level == CompressionLevel.UNCOMPRESSED) {
+			// Write BFINAL bit and BTYPE (00)
+			writeBits(lastBlock ? 1 : 0, 3);		// Uncompressed
+			
+			// Align to byte boundary
+			if (bitOffset > 0) {
+				writeBits(0, 8 - bitOffset);
+			}
+		}
+		else {
+			writeBits(4 | (lastBlock ? 1 : 0), 3);		// Dynamic Huffman tree compression
+		}
+		
+		blockStartAddr = currentAddr;
+	}
+	
 	
 	private inline function endBlock()
 	{
@@ -498,7 +490,7 @@ class DeflateStream
 	
 	
 	// Call only once. After called, no other methods should be called
-	public inline function finalize() : ByteArray
+	public function finalize() : ByteArray
 	{
 		var range = fastFinalize();
 		
@@ -520,7 +512,7 @@ class DeflateStream
 	
 	
 	// Call only once. After called, no other methods should be called
-	public inline function fastFinalize() : MemoryRange
+	public function fastFinalize() : MemoryRange
 	{
 		// It's easier to always write one empty block at the end than to force
 		// the caller to know in advance which block is the last one.
@@ -545,13 +537,36 @@ class DeflateStream
 	
 	
 	// Does not include SCRATCH_MEMORY_SIZE
-	public static inline function maxOutputBufferSize(uncompressedByteCount : Int, blockCount = 1)
+	public function maxOutputBufferSize(inputByteCount : Int)
 	{
-		// Using Huffman compression with max 15 bits can't possibly
-		// exceed twice the uncompressed length. Margin of 300 includes
-		// header/footer data (think 285 length/literal codes at 7 bits max each),
-		// rounded up for good luck.
-		return uncompressedByteCount * 2 + 300 * blockCount;
+		return _maxOutputBufferSize(inputByteCount);
+	}
+	
+	private inline function _maxOutputBufferSize(inputByteCount : Int)
+	{
+		var blockCount;
+		var blockOverhead;
+		var multiplier = 1;
+		
+		if (level == UNCOMPRESSED) {
+			blockOverhead = 8;		// 1B block header + 4B header + 3B max needed by writeBits
+			blockCount = Math.ceil(inputByteCount / MAX_UNCOMPRESSED_BYTES_PER_BLOCK);
+		}
+		else {
+			// TODO: Determine # of blocks needed for inputByteCount bytes
+			
+			// Using Huffman compression with max 15 bits can't possibly
+			// exceed twice the uncompressed length. Margin of 300 includes
+			// header/footer data (think 285 length/literal codes at 7 bits max each),
+			// rounded up for good luck.
+			multiplier = 2;
+			blockOverhead = 300;
+			
+			blockCount = 1;
+		}
+		
+		// Include extra block to account for the one written during finalize()
+		return inputByteCount * multiplier + blockOverhead * (blockCount + 1);
 	}
 	
 	
