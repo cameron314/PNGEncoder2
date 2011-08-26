@@ -118,7 +118,7 @@ class DeflateStream
 	private static inline var LENGTH_EXTRA_BITS_OFFSET : Int = HUFFMAN_SCRATCH_OFFSET + MAX_SYMBOLS_IN_TREE * 4;
 	// Next offset: LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4
 	
-	
+	private static inline var OUTPUT_BYTES_BEFORE_NEW_BLOCK : Int = 48 * 1024;	// Only used with FAST
 	private static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
 	private static inline var ADDLER_MAX : Int = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : Int = 15;
@@ -324,25 +324,18 @@ class DeflateStream
 			mem.length = _maxOutputBufferSize(len) + currentAddr;
 		}
 		
-		if (!blockInProgress) {
-			beginBlock();
-			
-			// Write Huffman trees into the stream as per RFC 1951
-			createAndWriteHuffmanTrees(offset, end);
-		}
-		
 		if (zlib) {
 			updateAdler32(offset, end);
 		}
 		
 		if (level == FAST) {
-			_fastUpdateHuffmanOnly(offset, end, len);
+			_fastUpdateHuffmanOnly(offset, end);
 		}
 		else if (level == NORMAL) {
-			_fastUpdateRunLength(offset, end, len);
+			_fastUpdateRunLength(offset, end);
 		}
 		else if (level == MAXIMUM) {
-			_fastUpdateHuffmanAndLZ77(offset, end, len);
+			_fastUpdateHuffmanAndLZ77(offset, end);
 		}
 		else {
 			throw new Error("Compression level not supported");
@@ -350,51 +343,86 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastUpdateHuffmanOnly(offset : Int, end : Int, len : Int)
+	private inline function _fastUpdateHuffmanOnly(offset : Int, end : Int)
 	{
-		// Write data (loop unrolled for speed)
 		//var startTime = Lib.getTimer();
 		
+		// Write data in bytesBeforeBlockCheck byte increments -- this allows
+		// us to efficiently check the current output block size only periodically
+		
+		var bytesBeforeBlockCheck = 2048;
 		var i = offset;
-		var end32 = offset + (len & 0xFFFFFFE0);		// Floor to nearest 32
-		while (i < end32) {
-			writeSymbol(Memory.getByte(i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			writeSymbol(Memory.getByte(++i));
-			++i;
+		var endCheck;
+		while (end - offset > bytesBeforeBlockCheck) {
+			endCheck = offset + bytesBeforeBlockCheck;
+			
+			if (!blockInProgress) {
+				beginBlock();
+				
+				// Write Huffman trees into the stream as per RFC 1951
+				// Estimate bytes (assume ~50% compression ratio)
+				createAndWriteHuffmanTrees(offset, Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 - currentBlockLength() * 2)));
+			}
+			
+			while (i < endCheck) {
+				// Write data (loop unrolled for speed)
+				writeSymbol(Memory.getByte(i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				writeSymbol(Memory.getByte(++i));
+				++i;
+			}
+			
+			offset += bytesBeforeBlockCheck;
+			
+			if (currentBlockLength() > OUTPUT_BYTES_BEFORE_NEW_BLOCK) {
+				endBlock();
+			}
 		}
+		
+		if (!blockInProgress) {
+			beginBlock();
+			
+			// Write Huffman trees into the stream as per RFC 1951
+			// Estimate bytes
+			createAndWriteHuffmanTrees(offset, end);
+		}
+		
 		while (i < end) {
 			writeSymbol(Memory.getByte(i));
 			++i;
+		}
+		
+		if (currentBlockLength() > OUTPUT_BYTES_BEFORE_NEW_BLOCK) {
+			endBlock();
 		}
 		
 		//var endTime = Lib.getTimer();
@@ -402,8 +430,16 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastUpdateRunLength(offset : Int, end : Int, len : Int)
+	private inline function _fastUpdateRunLength(offset : Int, end : Int)
 	{
+		if (!blockInProgress) {
+			beginBlock();
+			
+			// Write Huffman trees into the stream as per RFC 1951
+			createAndWriteHuffmanTrees(offset, end);
+		}
+		
+		
 		var length;
 		var lengthInfo;
 		var j;
@@ -431,7 +467,7 @@ class DeflateStream
 		}
 	}
 	
-	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int, len : Int)
+	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int)
 	{
 		throw new Error("Not implemented");
 	}
@@ -455,37 +491,6 @@ class DeflateStream
 		}
 		
 		blockStartAddr = currentAddr;
-	}
-	
-	
-	private inline function endBlock()
-	{
-		if (level != UNCOMPRESSED) {
-			writeSymbol(EOB);
-		}
-		
-		blockInProgress = false;
-	}
-	
-	private inline function currentBlockLength()
-	{
-		return blockInProgress ? currentAddr - blockStartAddr : 0;
-	}
-	
-	
-	private inline function writeEmptyBlock(lastBlock : Bool)
-	{
-		if (blockInProgress) {
-			endBlock();
-		}
-		
-		var currentLevel = level;
-		level = UNCOMPRESSED;
-		beginBlock(lastBlock);
-		writeShort(0);
-		writeShort(~0);
-		endBlock();
-		level = currentLevel;
 	}
 	
 	
@@ -553,7 +558,15 @@ class DeflateStream
 			blockCount = Math.ceil(inputByteCount / MAX_UNCOMPRESSED_BYTES_PER_BLOCK);
 		}
 		else {
-			// TODO: Determine # of blocks needed for inputByteCount bytes
+			if (level == FAST) {
+				// Worst case:
+				blockCount = Math.ceil(inputByteCount * 2 / OUTPUT_BYTES_BEFORE_NEW_BLOCK);
+			}
+			else {
+				// TODO: Determine # of blocks needed for inputByteCount bytes
+				
+				blockCount = 1;
+			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
 			// exceed twice the uncompressed length. Margin of 300 includes
@@ -561,12 +574,42 @@ class DeflateStream
 			// rounded up for good luck.
 			multiplier = 2;
 			blockOverhead = 300;
-			
-			blockCount = 1;
 		}
 		
 		// Include extra block to account for the one written during finalize()
 		return inputByteCount * multiplier + blockOverhead * (blockCount + 1);
+	}
+	
+	
+	private inline function endBlock()
+	{
+		if (level != UNCOMPRESSED) {
+			writeSymbol(EOB);
+		}
+		
+		blockInProgress = false;
+	}
+	
+	
+	private inline function currentBlockLength()
+	{
+		return blockInProgress ? currentAddr - blockStartAddr : 0;
+	}
+	
+	
+	private inline function writeEmptyBlock(lastBlock : Bool)
+	{
+		if (blockInProgress) {
+			endBlock();
+		}
+		
+		var currentLevel = level;
+		level = UNCOMPRESSED;
+		beginBlock(lastBlock);
+		writeShort(0);
+		writeShort(~0);
+		endBlock();
+		level = currentLevel;
 	}
 	
 	
@@ -575,7 +618,7 @@ class DeflateStream
 		if (level == NORMAL || level == MAXIMUM) {
 			// Write length code, extra bits and lower bound that must be subtracted to
 			// get the extra bits value for all the possible lengths.
-			// This information is stuffed into 4 bytes byte per length, addressable
+			// This information is stuffed into 4 bytes per length, addressable
 			// by Memory.getI32(LENGTH_EXTRA_BITS_OFFSET + length * 4).
 			// Upper 3 bytes: Length code
 			// Lower byte: The upper 3 bits are the extra bit count, and the lower 5 are
@@ -611,7 +654,12 @@ class DeflateStream
 	}
 	
 	
-	private inline function createAndWriteHuffmanTrees(offset : Int, end : Int)
+	private function createAndWriteHuffmanTrees(offset : Int, end : Int)
+	{
+		_createAndWriteHuffmanTrees(offset, end);
+	}
+	
+	private inline function _createAndWriteHuffmanTrees(offset : Int, end : Int)
 	{
 		literalLengthCodes = createLiteralLengthTree(offset, end);
 		if (distanceCodes == -1) {
