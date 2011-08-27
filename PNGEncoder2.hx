@@ -192,7 +192,7 @@ class PNGEncoder2
 		// CHUNK_START + deflated data buffer: scratch (raw image bytes)
 		// CHUNK_START + deflated data buffer + scratchSize: Uncompressed PNG-format image data
 		
-		var deflateStream = DeflateStream.createEx(FAST, DEFLATE_SCRATCH, CHUNK_START, true);
+		var deflateStream = DeflateStream.createEx(NORMAL, DEFLATE_SCRATCH, CHUNK_START, true);
 		
 		data.length = Std.int(Math.max(CHUNK_START + deflateStream.maxOutputBufferSize(length) + scratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(data);

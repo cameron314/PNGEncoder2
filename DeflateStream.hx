@@ -241,7 +241,7 @@ class DeflateStream
 	// Updates the stream with a compressed representation of bytes
 	// between the from and to indexes (of selected memory).
 	// For best compression, write large chunks of data at once (there
-	// is no internal buffer for performance reasons)
+	// is no internal buffering for performance reasons)
 	public function fastUpdate(offset : Int, end : Int)
 	{
 		_fastUpdate(offset, end);
@@ -361,7 +361,7 @@ class DeflateStream
 				
 				// Write Huffman trees into the stream as per RFC 1951
 				// Estimate bytes (assume ~50% compression ratio)
-				createAndWriteHuffmanTrees(offset, Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 - currentBlockLength() * 2)));
+				createAndWriteHuffmanTrees(offset, Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2)));
 			}
 			
 			while (i < endCheck) {
@@ -411,8 +411,6 @@ class DeflateStream
 		if (!blockInProgress) {
 			beginBlock();
 			
-			// Write Huffman trees into the stream as per RFC 1951
-			// Estimate bytes
 			createAndWriteHuffmanTrees(offset, end);
 		}
 		
@@ -432,40 +430,51 @@ class DeflateStream
 	
 	private inline function _fastUpdateRunLength(offset : Int, end : Int)
 	{
-		if (!blockInProgress) {
-			beginBlock();
-			
-			// Write Huffman trees into the stream as per RFC 1951
-			createAndWriteHuffmanTrees(offset, end);
-		}
-		
+		var cappedEnd;
+		var len;
 		
 		var length;
 		var lengthInfo;
-		var j;
+		var i, j;
 		
-		var i = offset;
-		while (i < end) {
-			j = i + 1;
-			while (j < end && Memory.getByte(j) == Memory.getByte(i) && j - i <= MAX_LENGTH) {
-				++j;
-			}
+		// blockInProgress should always be false here
+		
+		while (end - offset > 0) {
+			// Assume ~50% compression ratio
+			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
+			len = cappedEnd - offset;
 			
-			// Write the current byte whether it repeats or not
-			writeSymbol(Memory.getByte(i));
-			++i;
+			beginBlock();
+			createAndWriteHuffmanTrees(offset, cappedEnd);
 			
-			if (j - i >= MIN_LENGTH) {
-				length = j - i;
-				lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
-				writeSymbol(lengthInfo >>> 8);
-				writeBits(length - (lengthInfo & 0x1F), (lengthInfo & 0xFF) >>> 5);
-				writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
+			i = offset;
+			while (i < cappedEnd) {
+				j = i + 1;
+				while (j < cappedEnd && Memory.getByte(j) == Memory.getByte(i) && j - i <= MAX_LENGTH) {
+					++j;
+				}
 				
-				i += length;
+				// Write the current byte whether it repeats or not
+				writeSymbol(Memory.getByte(i));
+				++i;
+				
+				if (j - i >= MIN_LENGTH) {
+					length = j - i;
+					lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
+					writeSymbol(lengthInfo >>> 8);
+					writeBits(length - (lengthInfo & 0x1F), (lengthInfo & 0xFF) >>> 5);
+					writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
+					
+					i += length;
+				}
 			}
+			
+			endBlock();
+			
+			offset += len;
 		}
 	}
+	
 	
 	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int)
 	{
@@ -542,6 +551,10 @@ class DeflateStream
 	
 	
 	// Does not include SCRATCH_MEMORY_SIZE
+	// Note that if the data is written in very small chunks
+	// then the maximum output size may be exceeded (because
+	// no buffering is done internally, a large number of blocks
+	// may be created, causing enough overhead to overflow the max)
 	public function maxOutputBufferSize(inputByteCount : Int)
 	{
 		return _maxOutputBufferSize(inputByteCount);
@@ -565,7 +578,7 @@ class DeflateStream
 			else {
 				// TODO: Determine # of blocks needed for inputByteCount bytes
 				
-				blockCount = 1;
+				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
 			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
@@ -662,9 +675,7 @@ class DeflateStream
 	private inline function _createAndWriteHuffmanTrees(offset : Int, end : Int)
 	{
 		literalLengthCodes = createLiteralLengthTree(offset, end);
-		if (distanceCodes == -1) {
-			distanceCodes = createDistanceTree();
-		}
+		distanceCodes = createDistanceTree();
 		
 		var codeLengthCodes = createCodeLengthTree(literalLengthCodes, distanceCodes);
 		
@@ -1058,6 +1069,8 @@ class HuffmanTree
 	
 	private static inline function sortByWeightNonDecreasing(offset, end)
 	{
+		// TODO: Change to O(nlgn) or O(n) sort (it's measurably slow)
+		
 		// Insertion sort
 		var i, j;
 		var currentWeight, currentSymbol;
