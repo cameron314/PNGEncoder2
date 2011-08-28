@@ -576,8 +576,6 @@ class DeflateStream
 				blockCount = Math.ceil(inputByteCount * 2 / OUTPUT_BYTES_BEFORE_NEW_BLOCK);
 			}
 			else {
-				// TODO: Determine # of blocks needed for inputByteCount bytes
-				
 				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
 			}
 			
@@ -675,7 +673,7 @@ class DeflateStream
 	private inline function _createAndWriteHuffmanTrees(offset : Int, end : Int)
 	{
 		literalLengthCodes = createLiteralLengthTree(offset, end);
-		distanceCodes = createDistanceTree();
+		distanceCodes = createDistanceTree(offset, end);
 		
 		var codeLengthCodes = createCodeLengthTree(literalLengthCodes, distanceCodes);
 		
@@ -823,86 +821,129 @@ class DeflateStream
 	
 	private inline function createLiteralLengthTree(offset : Int, end : Int)
 	{
-		var n = 257;		// 256 literals plus EOB
+		var n = 0;
 		
-		// Literals
-		for (value in 0 ... 256) {		// Literals
-			Memory.setI32(scratchAddr + value * 4, 10);
-		}
-		
-		// Weight EOB less than more common literals
-		Memory.setI32(scratchAddr + EOB * 4, 1);
-		
-		if (level == NORMAL) {
-			for (length in 257 ... 286) {
-				Memory.setI32(scratchAddr + length * 4, 100);
+		if (level == FAST) {
+			n = 257;		// 256 literals plus EOB
+			
+			// Literals
+			for (value in 0 ... 256) {		// Literals
+				Memory.setI32(scratchAddr + value * 4, 10);
 			}
 			
-			n += LENGTH_CODES;
+			// Weight EOB less than more common literals
+			Memory.setI32(scratchAddr + EOB * 4, 1);
+			
+			// Sample given bytes to estimate literal weights
+			var len = end - offset;
+			var sampleFrequency;		// Sample every nth byte
+			if (len <= 8096) {
+				// Small sample, calculate exactly
+				sampleFrequency = 1;
+			}
+			else if (len <= 100 * 1024) {
+				sampleFrequency = 5;		// Use prime to avoid hitting a pattern as much as possible -- not sure if this helps, but hey
+			}
+			else {
+				sampleFrequency = 11;
+			}
+			
+			var byte;
+			var samples = Std.int(len / sampleFrequency);
+			var end16 = samples & 0xFFFFFFF0;		// Floor to nearest 16
+			var i = 0;
+			while (i < end16) {
+				byte = Memory.getByte(offset + i * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 1) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 2) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 3) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 4) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 5) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 6) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 7) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 8) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 9) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 10) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 11) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 12) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 13) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 14) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				byte = Memory.getByte(offset + (i + 15) * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				i += 16;
+			}
+			while (i < samples) {
+				byte = Memory.getByte(offset + i * sampleFrequency);
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				++i;
+			}
+		}
+		else if (level == NORMAL) {
+			// Get exact weights for given bytes; this is possible since all bytes
+			// going into the block are known in advance (which is not the case with
+			// the FAST level)
+			
+			n = 0;
+			for (symbol in 0 ... 286) {
+				Memory.setI32(scratchAddr + symbol * 4, 0);
+			}
+			
+			// Weight literals and lengths
+			var byte;
+			var length, lengthCode;
+			var j;
+			var i = offset;
+			while (i < end) {
+				j = i + 1;
+				byte = Memory.getByte(i);
+				while (j < end && Memory.getByte(j) == byte && j - i <= MAX_LENGTH) {
+					++j;
+				}
+				
+				// Increment weight for the current symbol
+				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
+				++i;
+				
+				if (j - i >= MIN_LENGTH) {
+					length = j - i;
+					lengthCode = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4) >>> 8;
+					Memory.setI32(scratchAddr + lengthCode * 4, Memory.getI32(scratchAddr + lengthCode * 4) + 1);
+					
+					i += length;
+				}
+			}
+			
+			// Find last non-zero weight (all symbols up to that point will have to be included)
+			for (symbol in 0 ... 286) {
+				if (Memory.getI32(scratchAddr + symbol * 4) > 0) {
+					n = symbol + 1;
+				}
+			}
+			
+			// Make sure all weights up to the last one are weighted > 0
+			for (symbol in 0 ... n) {
+				Memory.setI32(scratchAddr + symbol * 4, Memory.getI32(scratchAddr + symbol * 4) + 1);
+			}
 		}
 		else if (level == MAXIMUM) {
 			// TODO
 		}
 		
-		
-		// Sample given bytes to estimate literal weights
-		var len = end - offset;
-		var sampleFrequency;		// Sample every nth byte
-		if (len <= 8096) {
-			// Small sample, calculate exactly
-			sampleFrequency = 1;
-		}
-		else if (len <= 100 * 1024) {
-			sampleFrequency = 5;		// Use prime to avoid hitting a pattern as much as possible -- not sure if this helps, but hey
-		}
-		else {
-			sampleFrequency = 11;
-		}
-		
-		var byte;
-		var samples = Std.int(len / sampleFrequency);
-		var end16 = samples & 0xFFFFFFF0;		// Floor to nearest 16
-		var i = 0;
-		while (i < end16) {
-			byte = Memory.getByte(offset + i * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 1) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 2) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 3) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 4) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 5) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 6) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 7) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 8) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 9) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 10) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 11) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 12) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 13) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 14) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			byte = Memory.getByte(offset + (i + 15) * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			i += 16;
-		}
-		while (i < samples) {
-			byte = Memory.getByte(offset + i * sampleFrequency);
-			Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-			++i;
-		}
 		
 		HuffmanTree.weightedAlphabetToCodes(scratchAddr, scratchAddr + n * 4, MAX_CODE_LENGTH);
 		
@@ -910,20 +951,20 @@ class DeflateStream
 	}
 	
 	
-	private inline function createDistanceTree()
+	private inline function createDistanceTree(offset : Int, end : Int)
 	{
-		var offset = scratchAddr + DISTANCE_OFFSET;
+		var scratchOffset = scratchAddr + DISTANCE_OFFSET;
 		var n = 0;
 		
 		if (level == NORMAL) {
-			Memory.setI32(offset, 100);
+			Memory.setI32(scratchOffset, 100);
 			++n;
 		}
 		else if (level == MAXIMUM) {
 			// TODO
 		}
 		
-		HuffmanTree.weightedAlphabetToCodes(offset, offset + n * 4, MAX_CODE_LENGTH);
+		HuffmanTree.weightedAlphabetToCodes(scratchOffset, scratchOffset + n * 4, MAX_CODE_LENGTH);
 		
 		return n;
 	}
