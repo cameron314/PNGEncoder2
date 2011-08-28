@@ -72,7 +72,7 @@ class DeflateStreamTests
 		var stream = DeflateStream.create(FAST);
 		
 		// Act
-		stream.update(bytes);
+		stream.write(bytes);
 		var result = stream.finalize();
 		result.inflate();
 		
@@ -97,7 +97,7 @@ class DeflateStreamTests
 		var stream = DeflateStream.create(FAST, true);
 		
 		// Act
-		stream.update(bytes);
+		stream.write(bytes);
 		var result = stream.finalize();
 		result.uncompress();
 		
@@ -122,7 +122,7 @@ class DeflateStreamTests
 		var stream = DeflateStream.create(UNCOMPRESSED, true);
 		
 		// Act
-		stream.update(bytes);
+		stream.write(bytes);
 		var result = stream.finalize();
 		result.uncompress();
 		
@@ -146,7 +146,7 @@ class DeflateStreamTests
 		var stream = DeflateStream.create(FAST, true);
 		
 		// Act
-		stream.update(bytes);
+		stream.write(bytes);
 		var result = stream.finalize();
 		result.uncompress();
 		

@@ -218,7 +218,7 @@ class DeflateStream
 	
 	// For best compression, write large chunks of data at once (there
 	// is no internal buffer for performance reasons)
-	public function update(bytes : ByteArray)
+	public function write(bytes : ByteArray)
 	{
 		// Put input bytes into fast mem *after* a gap for output bytes.
 		// This allows multiple calls to update without needing to pre-declare an input
@@ -234,7 +234,7 @@ class DeflateStream
 		}
 		
 		memcpy(bytes, offset);
-		return fastUpdate(offset, end);
+		return fastWrite(offset, end);
 	}
 	
 	
@@ -242,24 +242,24 @@ class DeflateStream
 	// between the from and to indexes (of selected memory).
 	// For best compression, write large chunks of data at once (there
 	// is no internal buffering for performance reasons)
-	public function fastUpdate(offset : Int, end : Int)
+	public function fastWrite(offset : Int, end : Int)
 	{
-		_fastUpdate(offset, end);
+		_fastWrite(offset, end);
 	}
 	
 	
-	private inline function _fastUpdate(offset : Int, end : Int)
+	private inline function _fastWrite(offset : Int, end : Int)
 	{
 		if (level == UNCOMPRESSED) {
-			_fastUpdateUncompressed(offset, end);
+			_fastWriteUncompressed(offset, end);
 		}
 		else {
-			_fastUpdateCompressed(offset, end);
+			_fastWriteCompressed(offset, end);
 		}
 	}
 	
 	// Pre-condition: blockInProgress should always be false
-	private inline function _fastUpdateUncompressed(offset : Int, end : Int)
+	private inline function _fastWriteUncompressed(offset : Int, end : Int)
 	{
 		if (zlib) {
 			updateAdler32(offset, end);
@@ -314,7 +314,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastUpdateCompressed(offset : Int, end : Int)
+	private inline function _fastWriteCompressed(offset : Int, end : Int)
 	{
 		var len = end - offset;
 		
@@ -329,13 +329,13 @@ class DeflateStream
 		}
 		
 		if (level == FAST) {
-			_fastUpdateHuffmanOnly(offset, end);
+			_fastWriteHuffmanOnly(offset, end);
 		}
 		else if (level == NORMAL) {
-			_fastUpdateRunLength(offset, end);
+			_fastWriteRunLength(offset, end);
 		}
 		else if (level == MAXIMUM) {
-			_fastUpdateHuffmanAndLZ77(offset, end);
+			_fastWriteHuffmanAndLZ77(offset, end);
 		}
 		else {
 			throw new Error("Compression level not supported");
@@ -343,7 +343,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastUpdateHuffmanOnly(offset : Int, end : Int)
+	private inline function _fastWriteHuffmanOnly(offset : Int, end : Int)
 	{
 		//var startTime = Lib.getTimer();
 		
@@ -428,7 +428,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastUpdateRunLength(offset : Int, end : Int)
+	private inline function _fastWriteRunLength(offset : Int, end : Int)
 	{
 		var cappedEnd;
 		var len;
@@ -476,7 +476,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastUpdateHuffmanAndLZ77(offset : Int, end : Int)
+	private inline function _fastWriteHuffmanAndLZ77(offset : Int, end : Int)
 	{
 		throw new Error("Not implemented");
 	}
