@@ -1,0 +1,5 @@
+-cp .
+-swf PNGEncoder2.swc
+-swf-version 10
+-swf-header 800:600:30:FFFFFF
+PNGEncoder2
