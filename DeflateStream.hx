@@ -258,6 +258,28 @@ class DeflateStream
 		}
 	}
 	
+	
+	// Returns a memory range for the currently written data in the output buffer.
+	// Guaranteed to always start at the original startAddr passed to createEx
+	public function peek() : MemoryRange
+	{
+		return new MemoryRange(startAddr, currentAddr);
+	}
+	
+	
+	// Releases all written bytes from the output buffer.
+	// Use peek() to read the bytes before releasing them.
+	public function release() : Void
+	{
+		if (bitOffset > 0) {
+			// Copy in-progress byte to start
+			Memory.setByte(startAddr, Memory.getByte(currentAddr));
+		}
+		
+		currentAddr = startAddr;
+	}
+	
+	
 	// Pre-condition: blockInProgress should always be false
 	private inline function _fastWriteUncompressed(offset : Int, end : Int)
 	{

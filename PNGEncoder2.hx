@@ -35,6 +35,12 @@
 package;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
+import flash.display.Sprite;
+import flash.display.Stage;
+import flash.errors.Error;
+import flash.events.Event;
+import flash.events.EventDispatcher;
+import flash.events.ProgressEvent;
 import flash.geom.Rectangle;
 import flash.Lib;
 import flash.Memory;
@@ -48,15 +54,25 @@ import DeflateStream;
 // TODO: Make sure all public methods are *not* inlined (they wouldn't be accessible from a swc in flash)
 
 /**
- * Class that converts BitmapData into a valid PNG
+ * Converts BitmapData objects into valid PNGs
  */
-class PNGEncoder2
+class PNGEncoder2 extends EventDispatcher
 {
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
 	private static var data : ByteArray;
+	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
+	private static var encoding = false;
 	
+	// FAST compression level is recommended (and default)
+	public static var level : CompressionLevel;
+	
+	private var img : BitmapData;
+	public var png : ByteArray;
+	private var deflateStream : DeflateStream;
+	private var currentY : Int;
+	private var step : Int;
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
@@ -66,63 +82,185 @@ class PNGEncoder2
 	 * @return a ByteArray representing the PNG encoded image data.
 	 * @playerversion Flash 10
 	 */
-	public static function encode(img : BitmapData) : ByteArray
+	public static function encode(image : BitmapData) : ByteArray
 	{
-		return _encode(img);
+		return _encode(image);
 	}
+	
+	
+	/**
+	 * Creates a PNG image from the specified BitmapData without blocking.
+	 * Highly optimized for speed.
+	 *
+	 * @param image The BitmapData that will be converted into the PNG format.
+	 * @return a PNGEncoder2 object that dispatches COMPLETE and PROGRESS events.
+	 * @playerversion Flash 10
+	 */
+	public static function encodeAsync(image : BitmapData) : PNGEncoder2
+	{
+		return new PNGEncoder2(image);
+	}
+	
 	
 	private static inline function _encode(img : BitmapData) : ByteArray
 	{
-		//var outerStartTime = Lib.getTimer();
-		
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+		
+		var png = beginEncoding(img);
+		
+		// Initialize stream for IDAT chunks
+		var deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
+		
+		writeIDATChunk(img, 0, img.height, deflateStream, png);
+		
+		endEncoding(png);
+		
+		Memory.select(oldFastMem);
+		return png;
+	}
+	
+	private static inline function beginEncoding(img : BitmapData) : ByteArray
+	{
+		if (encoding) {
+			throw new Error("Only one PNG can be encoded at once");
+		}
+		
+		encoding = true;
+		
+		
+		if (level == null) {
+			level = FAST;
+		}
 		
 		// Data will be select()ed for use with fast memory
 		// The first 256 * 4 bytes are the CRC table
 		// Inner chunk data is appended to the CRC table, starting at CHUNK_START
 		
-		//var startTime = Lib.getTimer();
 		initialize();		// Sets up data var & CRC table
 		
 		// Create output byte array
 		var png:ByteArray = new ByteArray();
-		//var endTime = Lib.getTimer();
-		//trace("Initialized in " + (endTime - startTime) + "ms");
 		
-		//startTime = Lib.getTimer();
 		writePNGSignature(png);
 		
-		// Build chunks (get stored in data starting at CHUNK_START)
+		writeIHDRChunk(img, png);
 		
-		var chunkLength = buildIHDRChunk(img);
-		writeChunk(png, 0x49484452, chunkLength);
-		//endTime = Lib.getTimer();
-		//trace("Built and wrote signature and IHDR chunk in " + (endTime - startTime) + "ms");
-		
-		//startTime = Lib.getTimer();
-		chunkLength = buildIDATChunk(img);
-		//endTime = Lib.getTimer();
-		//trace("Built IDAT chunk in " + (endTime - startTime) + "ms");
-		
-		//startTime = Lib.getTimer();
-		writeChunk(png, 0x49444154, chunkLength);
-		//endTime = Lib.getTimer();
-		//trace("Wrote IDAT chunk in " + (endTime - startTime) + "ms");
-		
-		//startTime = Lib.getTimer();
-		writeChunk(png, 0x49454E44, 0);
-		//endTime = Lib.getTimer();
-		//trace("Wrote IEND chunk in " + (endTime - startTime) + "ms");
-		
-		Memory.select(oldFastMem);
-		
-		png.position = 0;
-		//var outerEndTime = Lib.getTimer();
-		//trace("Total: " + (outerEndTime - outerStartTime) + "ms");
 		return png;
 	}
+	
+	
+	private static inline function endEncoding(png : ByteArray)
+	{
+		writeIENDChunk(png);
+		
+		encoding = false;
+		
+		png.position = 0;
+	}
+	
+	
+	
+	private function new(image : BitmapData)
+	{
+		super();
+		
+		_new(image);
+	}
+	
+	private inline function _new(image : BitmapData)
+	{
+		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+		
+		img = image;
+		png = beginEncoding(img);
+		currentY = 0;
+		
+		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
+		
+		if (img.width > 0) {
+			// Determine proper step
+			var startTime = Lib.getTimer();
+			
+			// Write first ~15K pixels to see how fast it is
+			var height = Std.int(Math.min(15 * 1024 / img.width, img.height));
+			writeIDATChunk(img, 0, height, deflateStream, png);
+			
+			var endTime = Lib.getTimer();
+			var ms = endTime - startTime;
+			
+			// Use 90% of available milliseconds per frame
+			var targetMs = Std.int(1 / new Stage().frameRate * 1000 * 0.9);
+			
+			// Ensure step is at least 8K pixels at once
+			step = Math.ceil(Math.max(targetMs / ms * height, 8 * 1024 / img.width));
+			
+			currentY = height;
+		}
+		else {
+			// Zero-width
+			step = img.height;
+		}
+		
+		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
+		
+		Memory.select(oldFastMem);
+	}
+	
+	
+	private function onEnterFrame(e : Event)
+	{
+		_onEnterFrame();
+	}
+	
+	private inline function _onEnterFrame()
+	{
+		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+		Memory.select(data);
+		
+		var bytesPerPixel = img.transparent ? 4 : 3;
+		var totalBytes = bytesPerPixel * img.width * img.height;
+		
+		if (currentY >= img.height) {
+			// Finished encoding the entire image in the initial setup
+			Memory.select(oldFastMem);
+			dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, false, false, totalBytes, totalBytes));
+			
+			Memory.select(data);
+			finalize(oldFastMem);
+		}
+		else {
+			var next = Std.int(Math.min(currentY + step, img.height));
+			writeIDATChunk(img, currentY, next, deflateStream, png);
+			currentY = next;
+			
+			var currentBytes = bytesPerPixel * img.width * currentY;
+			
+			Memory.select(oldFastMem);
+			dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, false, false, currentBytes, totalBytes));
+			
+			Memory.select(data);
+			finalize(oldFastMem);
+		}
+		
+		Memory.select(oldFastMem);
+	}
+	
+	
+	private inline function finalize(oldFastMem : ByteArray)
+	{
+		if (currentY >= img.height) {
+			sprite.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
+			
+			endEncoding(png);
+			
+			Memory.select(oldFastMem);
+			dispatchEvent(new Event(Event.COMPLETE));
+		}
+	}
+	
+	
 
 	private static inline function writePNGSignature(png : ByteArray)
 	{
@@ -131,7 +269,7 @@ class PNGEncoder2
 	}
 	
 	
-	private static inline function buildIHDRChunk(img : BitmapData)
+	private static inline function writeIHDRChunk(img : BitmapData, png : ByteArray)
 	{
 		var chunkLength = 13;
 		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
@@ -153,7 +291,7 @@ class PNGEncoder2
 		Memory.setByte(CHUNK_START + 11, 0);	// Filter method (always 0)
 		Memory.setByte(CHUNK_START + 12, 0);	// No interlacing
 		
-		return chunkLength;
+		writeChunk(png, 0x49484452, chunkLength);
 	}
 	
 	
@@ -173,10 +311,16 @@ class PNGEncoder2
 	}
 	
 	
-	private static inline function buildIDATChunk(img : BitmapData)
+	private static function writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
+	{
+		_writeIDATChunk(img, startY, endY, deflateStream, png);
+	}
+	
+	private static inline function _writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
 	{
 		var width = img.width;
-		var height = img.height;
+		var height = endY - startY;
+		var region = new Rectangle(0, startY, width, height);
 		
 		var bytesPerPixel = img.transparent ? 4 : 3;
 		
@@ -192,8 +336,6 @@ class PNGEncoder2
 		// CHUNK_START + deflated data buffer: scratch (raw image bytes)
 		// CHUNK_START + deflated data buffer + scratchSize: Uncompressed PNG-format image data
 		
-		var deflateStream = DeflateStream.createEx(FAST, DEFLATE_SCRATCH, CHUNK_START, true);
-		
 		data.length = Std.int(Math.max(CHUNK_START + deflateStream.maxOutputBufferSize(length) + scratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(data);
 		
@@ -206,7 +348,7 @@ class PNGEncoder2
 		
 		//var startTime = Lib.getTimer();
 		
-		var imgBytes = img.getPixels(new Rectangle(0, 0, width, height));
+		var imgBytes = img.getPixels(region);
 		imgBytes.position = 0;
 		memcpy(imgBytes, scratchAddr);
 		
@@ -356,14 +498,24 @@ class PNGEncoder2
 		//var startTime = Lib.getTimer();
 		
 		deflateStream.fastWrite(addrStart, addrStart + length);
-		var range = deflateStream.fastFinalize();
+		
+		var lastChunk = endY == img.height;
+		var range = lastChunk ? deflateStream.fastFinalize() : deflateStream.peek();
+		writeChunk(png, 0x49444154, range.len());
+		
+		if (!lastChunk) {
+			deflateStream.release();
+		}
 		
 		//var endTime = Lib.getTimer();
 		//trace("Compression took " + (endTime - startTime) + "ms");
-		
-		return range.len();
 	}
 	
+	
+	private static inline function writeIENDChunk(png : ByteArray)
+	{
+		writeChunk(png, 0x49454E44, 0);
+	}
 	
 
 	private static inline function writeChunk(png : ByteArray, type : UInt, chunkLength : UInt) : Void
