@@ -191,7 +191,8 @@ class PNGEncoder2 extends EventDispatcher
 			var ms = endTime - startTime;
 			
 			// Use 90% of available milliseconds per frame
-			var targetMs = Std.int(1 / new Stage().frameRate * 1000 * 0.9);
+			var fps = Lib.current == null ? 24 : Lib.current.stage.frameRate;
+			var targetMs = Std.int(1 / fps * 1000 * 0.9);
 			
 			// Ensure step is at least 8K pixels at once
 			step = Math.ceil(Math.max(targetMs / ms * height, 8 * 1024 / img.width));
@@ -577,6 +578,8 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private static inline function initialize() : Void
 	{
+		sprite = new Sprite();
+		
 		if (!crcComputed) {
 			data = new ByteArray();
 			data.length = Std.int(Math.max(CHUNK_START, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
