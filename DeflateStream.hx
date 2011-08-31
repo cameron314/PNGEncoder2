@@ -271,12 +271,14 @@ class DeflateStream
 	// Use peek() to read the bytes before releasing them.
 	public function release() : Void
 	{
-		if (level != UNCOMPRESSED || bitOffset > 0) {
-			// Copy in-progress byte to start
-			Memory.setByte(startAddr, Memory.getByte(currentAddr));
-		}
+		// Copy in-progress byte to start
+		Memory.setByte(startAddr, Memory.getByte(currentAddr));
 		
+		// Push back block start so that the distance between currentAddr
+		// and blockStartAddr remains consistent (it is only used for counting
+		// the number of bytes in the current block, so an invalid addr is OK)
 		blockStartAddr = startAddr - (currentAddr - blockStartAddr);
+		
 		currentAddr = startAddr;
 	}
 	

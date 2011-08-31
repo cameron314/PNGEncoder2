@@ -51,8 +51,6 @@ import flash.utils.Endian;
 import DeflateStream;
 
 
-// TODO: Make sure all public methods are *not* inlined (they wouldn't be accessible from a swc in flash)
-
 /**
  * Converts BitmapData objects into valid PNGs
  */
