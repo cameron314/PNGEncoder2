@@ -191,7 +191,7 @@ class PNGEncoder2 extends EventDispatcher
 			var ms = endTime - startTime;
 			
 			// Use 90% of available milliseconds per frame
-			var fps = Lib.current == null ? 24 : Lib.current.stage.frameRate;
+			var fps = Lib.current == null || Lib.current.stage == null ? 24 : Lib.current.stage.frameRate;
 			var targetMs = Std.int(1 / fps * 1000 * 0.9);
 			
 			// Ensure step is at least 8K pixels at once
@@ -519,7 +519,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 
-	private static inline function writeChunk(png : ByteArray, type : UInt, chunkLength : UInt) : Void
+	private static inline function writeChunk(png : ByteArray, type : Int, chunkLength : Int) : Void
 	{
 		var len = chunkLength;
 		

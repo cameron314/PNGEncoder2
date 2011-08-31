@@ -276,6 +276,7 @@ class DeflateStream
 			Memory.setByte(startAddr, Memory.getByte(currentAddr));
 		}
 		
+		blockStartAddr = startAddr - (currentAddr - blockStartAddr);
 		currentAddr = startAddr;
 	}
 	
@@ -430,19 +431,21 @@ class DeflateStream
 			}
 		}
 		
-		if (!blockInProgress) {
-			beginBlock();
+		if (i < end) {
+			if (!blockInProgress) {
+				beginBlock();
+				
+				createAndWriteHuffmanTrees(offset, end);
+			}
 			
-			createAndWriteHuffmanTrees(offset, end);
-		}
-		
-		while (i < end) {
-			writeSymbol(Memory.getByte(i));
-			++i;
-		}
-		
-		if (currentBlockLength() > OUTPUT_BYTES_BEFORE_NEW_BLOCK) {
-			endBlock();
+			while (i < end) {
+				writeSymbol(Memory.getByte(i));
+				++i;
+			}
+			
+			if (currentBlockLength() > OUTPUT_BYTES_BEFORE_NEW_BLOCK) {
+				endBlock();
+			}
 		}
 		
 		//var endTime = Lib.getTimer();
@@ -550,6 +553,10 @@ class DeflateStream
 	// Call only once. After called, no other methods should be called
 	public function fastFinalize() : MemoryRange
 	{
+		if (blockInProgress) {
+			endBlock();
+		}
+		
 		// It's easier to always write one empty block at the end than to force
 		// the caller to know in advance which block is the last one.
 		writeEmptyBlock(true);
