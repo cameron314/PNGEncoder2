@@ -271,7 +271,7 @@ class DeflateStream
 	// Use peek() to read the bytes before releasing them.
 	public function release() : Void
 	{
-		if (bitOffset > 0) {
+		if (level != UNCOMPRESSED || bitOffset > 0) {
 			// Copy in-progress byte to start
 			Memory.setByte(startAddr, Memory.getByte(currentAddr));
 		}
