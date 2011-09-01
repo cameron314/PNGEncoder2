@@ -519,6 +519,13 @@ class DeflateStream
 		blockInProgress = true;
 		
 		if (level == CompressionLevel.UNCOMPRESSED) {
+			if (bitOffset == 0) {
+				// Current output is aligned to byte, indicating
+				// last write may not have been made using writeBits;
+				// writeBits requires that next byte be zero
+				Memory.setByte(currentAddr, 0);
+			}
+			
 			// Write BFINAL bit and BTYPE (00)
 			writeBits(lastBlock ? 1 : 0, 3);		// Uncompressed
 			
