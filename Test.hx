@@ -48,8 +48,8 @@ class Test extends Sprite
 		//PNGEncoder2.level = CompressionLevel.NORMAL;
 		doBenchmark(bmp);
 		
-		/*
-		var that = this;
+		
+		/*var that = this;
 		PNGEncoder2.level = CompressionLevel.NORMAL;
 		var encoder = PNGEncoder2.encodeAsync(bmp);
 		encoder.addEventListener(Event.COMPLETE, function (e) {

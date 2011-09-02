@@ -57,11 +57,14 @@ import DeflateStream;
 // members appear as public in SWC
 class PNGEncoder2 extends EventDispatcher
 {
-	@:protected private var __impl : PNGEncoder2Impl;
+	// For internal use only. Do not access.
+	private var __impl : PNGEncoder2Impl;
 	
 	public static var level : CompressionLevel;
 	
-	@:getter(png) function getPng() return __impl.png
+	@:protected private inline function getPng() return __impl.png
+	@:protected public var png(getPng, null) : ByteArray;
+	@:getter(png) private function flGetPng() return getPng()
 	
 	
 	/**
