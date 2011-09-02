@@ -45,6 +45,7 @@ class Test extends Sprite
 		display.y = 250;
 		addChild(display);
 		
+		//PNGEncoder2.level = CompressionLevel.NORMAL;
 		doBenchmark(bmp);
 		
 		/*

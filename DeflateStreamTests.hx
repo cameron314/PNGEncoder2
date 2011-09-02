@@ -14,8 +14,8 @@ class DeflateStreamTests
 	public static function run()
 	{
 		testBufferResize();
-		testEmptyHuffmanTree();
-		testSimpleHuffmanTree();
+		//testEmptyHuffmanTree();
+		//testSimpleHuffmanTree();
 		testSimpleCompression();
 		testSimpleZlibCompression();
 		testUncompressedCompression();
@@ -25,7 +25,7 @@ class DeflateStreamTests
 	}
 	
 	
-	private static function testEmptyHuffmanTree()
+	/*private static function testEmptyHuffmanTree()
 	{
 		// Arrange
 		var weights = new Array<UInt>();
@@ -56,7 +56,7 @@ class DeflateStreamTests
 		assert((codes[2] & 0xFFFF) == 3);
 		assert(((codes[3] >>> 16) & 0xFFFB) == 3);
 		assert((codes[3] & 0xFFFF) == 3);
-	}
+	}*/
 	
 	
 	private static function testSimpleCompression()

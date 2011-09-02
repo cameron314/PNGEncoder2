@@ -1044,7 +1044,7 @@ class DeflateStream
 }
 
 
-class HuffmanTree
+private class HuffmanTree
 {
 	public static var scratchAddr : Int;
 	

@@ -40,39 +40,30 @@ import flash.display.Stage;
 import flash.errors.Error;
 import flash.events.Event;
 import flash.events.EventDispatcher;
+import flash.events.IEventDispatcher;
 import flash.events.ProgressEvent;
 import flash.geom.Rectangle;
 import flash.Lib;
 import flash.Memory;
 import flash.system.ApplicationDomain;
 import flash.system.System;
+import flash.text.ime.CompositionAttributeRange;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
 import DeflateStream;
 import flash.Vector;
 
 
-/**
- * Converts BitmapData objects into valid PNGs
- */
-class PNGEncoder2 extends EventDispatcher
+// Separate public interface from private implementation because all
+// members appear as public in SWC
+class PNGEncoder2 implements IEventDispatcher
 {
-	private static inline var CRC_TABLE_END = 256 * 4;
-	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
-	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
-	private static var data : ByteArray;
-	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
-	private static var encoding = false;
+	@:protected private var __impl : PNGEncoder2Impl;
 	
-	// FAST compression level is recommended (and default)
 	public static var level : CompressionLevel;
 	
-	private var img : BitmapData;
-	public var png : ByteArray;
-	private var deflateStream : DeflateStream;
-	private var currentY : Int;
-	private var step : Int;
-	private var done : Bool;
+	@:getter(png) function getPng() return __impl.png
+	
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
@@ -84,7 +75,8 @@ class PNGEncoder2 extends EventDispatcher
 	 */
 	public static function encode(image : BitmapData) : ByteArray
 	{
-		return _encode(image);
+		PNGEncoder2Impl.level = level;
+		return PNGEncoder2Impl.encode(image);
 	}
 	
 	
@@ -98,11 +90,66 @@ class PNGEncoder2 extends EventDispatcher
 	 */
 	public static function encodeAsync(image : BitmapData) : PNGEncoder2
 	{
+		PNGEncoder2Impl.level = level;
 		return new PNGEncoder2(image);
 	}
 	
 	
-	private static inline function _encode(img : BitmapData) : ByteArray
+	private inline function new(image : BitmapData)
+	{
+		__impl = new PNGEncoder2Impl(image);
+	}
+	
+	
+	public function addEventListener(type : String, listener : Dynamic -> Void, ?useCapture : Bool = false, ?priority : Int = 0, ?useWeakReference : Bool = false) : Void
+	{
+		__impl.addEventListener(type, listener, useCapture, priority, useWeakReference);
+	}
+	
+	public function dispatchEvent(event : Event) : Bool
+	{
+		return __impl.dispatchEvent(event);
+	}
+	
+	public function hasEventListener(type : String) : Bool
+	{
+		return __impl.hasEventListener(type);
+	}
+	
+	public function removeEventListener(type : String, listener : Dynamic -> Void, ?useCapture : Bool = false) : Void
+	{
+		__impl.removeEventListener(type, listener, useCapture);
+	}
+	
+	public function willTrigger(type : String) : Bool
+	{
+		return __impl.willTrigger(type);
+	}
+}
+
+
+@:protected private class PNGEncoder2Impl extends EventDispatcher
+{
+	private static inline var CRC_TABLE_END = 256 * 4;
+	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
+	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
+	private static var data : ByteArray;
+	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
+	private static var encoding = false;
+	
+	// FAST compression level is recommended (and default)
+	public static var level : CompressionLevel;
+	
+	public var png : ByteArray;
+	
+	private var img : BitmapData;
+	private var deflateStream : DeflateStream;
+	private var currentY : Int;
+	private var step : Int;
+	private var done : Bool;
+	
+	
+	public static inline function encode(img : BitmapData) : ByteArray
 	{
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
@@ -162,7 +209,7 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 	
-	private function new(image : BitmapData)
+	public function new(image : BitmapData)
 	{
 		super();
 		
