@@ -463,7 +463,6 @@ class DeflateStream
 	private inline function _fastWriteRunLength(offset : Int, end : Int)
 	{
 		var cappedEnd;
-		var len;
 		
 		var length;
 		var lengthInfo;
@@ -474,7 +473,6 @@ class DeflateStream
 		while (end - offset > 0) {
 			// Assume ~50% compression ratio
 			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
-			len = cappedEnd - offset;
 			
 			beginBlock();
 			createAndWriteHuffmanTrees(offset, cappedEnd);
@@ -493,8 +491,8 @@ class DeflateStream
 				if (j - i >= MIN_LENGTH) {
 					length = j - i;
 					lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
-					writeSymbol(lengthInfo >>> 8);
-					writeBits(length - (lengthInfo & 0x1F), (lengthInfo & 0xFF) >>> 5);
+					writeSymbol(lengthInfo >>> 16);
+					writeBits(length - (lengthInfo & 0x1FFF), (lengthInfo & 0xFF00) >>> 13);
 					writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
 					
 					i += length;
@@ -503,7 +501,7 @@ class DeflateStream
 			
 			endBlock();
 			
-			offset += len;
+			offset = cappedEnd;
 		}
 	}
 	
@@ -673,37 +671,38 @@ class DeflateStream
 			// Write length code, extra bits and lower bound that must be subtracted to
 			// get the extra bits value for all the possible lengths.
 			// This information is stuffed into 4 bytes per length, addressable
-			// by Memory.getI32(LENGTH_EXTRA_BITS_OFFSET + length * 4).
-			// Upper 3 bytes: Length code
-			// Lower byte: The upper 3 bits are the extra bit count, and the lower 5 are
+			// by Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4).
+			// Upper 2 bytes: Length code
+			// Lower 2 bytes: The upper 3 bits are the extra bit count, and the lower 13 are
 			// the lower bound.
 			
 			var offset = scratchAddr + LENGTH_EXTRA_BITS_OFFSET;
 			
 			// 3 ... 10:
-			Memory.setI32(offset + 3 * 4, (257 << 8) | 3);
-			Memory.setI32(offset + 4 * 4, (258 << 8) | 4);
-			Memory.setI32(offset + 5 * 4, (259 << 8) | 5);
-			Memory.setI32(offset + 6 * 4, (260 << 8) | 6);
-			Memory.setI32(offset + 7 * 4, (261 << 8) | 7);
-			Memory.setI32(offset + 8 * 4, (262 << 8) | 8);
-			Memory.setI32(offset + 9 * 4, (263 << 8) | 9);
-			Memory.setI32(offset + 10 * 4, (264 << 8) | 10);
+			Memory.setI32(offset + 3 * 4, (257 << 16) | 3);
+			Memory.setI32(offset + 4 * 4, (258 << 16) | 4);
+			Memory.setI32(offset + 5 * 4, (259 << 16) | 5);
+			Memory.setI32(offset + 6 * 4, (260 << 16) | 6);
+			Memory.setI32(offset + 7 * 4, (261 << 16) | 7);
+			Memory.setI32(offset + 8 * 4, (262 << 16) | 8);
+			Memory.setI32(offset + 9 * 4, (263 << 16) | 9);
+			Memory.setI32(offset + 10 * 4, (264 << 16) | 10);
 			
-			// 11 ... 257:
+			// 11 ... 258 (258 is special-cased right after):
 			var base = 11;
 			var symbol = 265;
 			for (extraBits in 1 ... 6) {
 				for (_ in 0 ... 4) {
+					//Lib.trace("Lengths " + base + "-" + (base + (1 << extraBits) - 1) + ": code: " + symbol + "; extra bits: " + extraBits);
 					for (i in base ... base + (1 << extraBits)) {
-						Memory.setI32(offset + i * 4, (symbol << 8) | (extraBits << 5) | base);
+						Memory.setI32(offset + i * 4, (symbol << 16) | (extraBits << 13) | base);
 					}
 					base += 1 << extraBits;
 					++symbol;
 				}
 			}
 			
-			Memory.setI32(offset + 258 * 4, (285 << 8) | 258);		// 258
+			Memory.setI32(offset + 258 * 4, (285 << 16) | 258);		// 258
 		}
 	}
 	
@@ -964,7 +963,7 @@ class DeflateStream
 				
 				if (j - i >= MIN_LENGTH) {
 					length = j - i;
-					lengthCode = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4) >>> 8;
+					lengthCode = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4) >>> 16;
 					Memory.setI32(scratchAddr + lengthCode * 4, Memory.getI32(scratchAddr + lengthCode * 4) + 1);
 					
 					i += length;

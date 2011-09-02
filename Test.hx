@@ -45,12 +45,15 @@ class Test extends Sprite
 		display.y = 250;
 		addChild(display);
 		
-		//doBenchmark(bmp);
+		doBenchmark(bmp);
 		
+		/*
 		var that = this;
-		PNGEncoder2.level = CompressionLevel.UNCOMPRESSED;
+		PNGEncoder2.level = CompressionLevel.NORMAL;
 		var encoder = PNGEncoder2.encodeAsync(bmp);
 		encoder.addEventListener(Event.COMPLETE, function (e) {
+			trace("Async complete");
+			
 			var loader = new Loader();
 			loader.loadBytes(encoder.png);
 			that.addChild(loader);
@@ -61,9 +64,11 @@ class Test extends Sprite
 				fileReference.save(encoder.png, "image.png");
 			});
 		});
-		
-		
-		/*var png = PNGEncoder2.encode(bmp);
+		*/
+		/*
+		PNGEncoder2.level = CompressionLevel.NORMAL;
+		var png = PNGEncoder2.encode(bmp);
+		trace("Sync complete");
 		var loader = new Loader();
 		loader.loadBytes(png);
 		addChild(loader);
