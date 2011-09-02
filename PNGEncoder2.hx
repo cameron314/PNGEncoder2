@@ -68,7 +68,7 @@ class PNGEncoder2 extends EventDispatcher
 	public static var level : CompressionLevel;
 	
 	@:protected private var img : BitmapData;
-	@:protected public var png : ByteArray;
+	public var png : ByteArray;
 	@:protected private var deflateStream : DeflateStream;
 	@:protected private var currentY : Int;
 	@:protected private var step : Int;
