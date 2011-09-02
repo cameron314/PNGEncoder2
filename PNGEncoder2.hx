@@ -57,22 +57,22 @@ import flash.Vector;
  */
 class PNGEncoder2 extends EventDispatcher
 {
-	@:protected private static inline var CRC_TABLE_END = 256 * 4;
-	@:protected private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
-	@:protected private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
-	@:protected private static var data : ByteArray;
-	@:protected private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
-	@:protected private static var encoding = false;
+	private static inline var CRC_TABLE_END = 256 * 4;
+	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
+	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
+	private static var data : ByteArray;
+	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
+	private static var encoding = false;
 	
 	// FAST compression level is recommended (and default)
 	public static var level : CompressionLevel;
 	
-	@:protected private var img : BitmapData;
+	private var img : BitmapData;
 	public var png : ByteArray;
-	@:protected private var deflateStream : DeflateStream;
-	@:protected private var currentY : Int;
-	@:protected private var step : Int;
-	@:protected private var done : Bool;
+	private var deflateStream : DeflateStream;
+	private var currentY : Int;
+	private var step : Int;
+	private var done : Bool;
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
@@ -102,7 +102,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	@:protected private static inline function _encode(img : BitmapData) : ByteArray
+	private static inline function _encode(img : BitmapData) : ByteArray
 	{
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
@@ -121,7 +121,7 @@ class PNGEncoder2 extends EventDispatcher
 		return png;
 	}
 	
-	@:protected private static inline function beginEncoding(img : BitmapData) : ByteArray
+	private static inline function beginEncoding(img : BitmapData) : ByteArray
 	{
 		if (encoding) {
 			throw new Error("Only one PNG can be encoded at once");
@@ -151,7 +151,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	@:protected private static inline function endEncoding(png : ByteArray)
+	private static inline function endEncoding(png : ByteArray)
 	{
 		writeIENDChunk(png);
 		
@@ -162,14 +162,14 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 	
-	@:protected private function new(image : BitmapData)
+	private function new(image : BitmapData)
 	{
 		super();
 		
 		_new(image);
 	}
 	
-	@:protected private inline function _new(image : BitmapData)
+	private inline function _new(image : BitmapData)
 	{
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
@@ -211,12 +211,12 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	@:protected private function onEnterFrame(e : Event)
+	private function onEnterFrame(e : Event)
 	{
 		_onEnterFrame();
 	}
 	
-	@:protected private inline function _onEnterFrame()
+	private inline function _onEnterFrame()
 	{
 		if (!done) {
 			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
@@ -258,7 +258,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	@:protected private inline function finalize(queuedEvents : Vector<Event>)
+	private inline function finalize(queuedEvents : Vector<Event>)
 	{
 		if (currentY >= img.height) {
 			done = true;
@@ -273,14 +273,14 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 
-	@:protected private static inline function writePNGSignature(png : ByteArray)
+	private static inline function writePNGSignature(png : ByteArray)
 	{
 		png.writeUnsignedInt(0x89504e47);
 		png.writeUnsignedInt(0x0D0A1A0A);
 	}
 	
 	
-	@:protected private static inline function writeIHDRChunk(img : BitmapData, png : ByteArray)
+	private static inline function writeIHDRChunk(img : BitmapData, png : ByteArray)
 	{
 		var chunkLength = 13;
 		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
@@ -307,13 +307,13 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 	// Copies length bytes (all by default) from src into flash.Memory at the specified offset
-	@:protected private static inline function memcpy(src : ByteArray, offset : UInt, length : UInt = 0) : Void
+	private static inline function memcpy(src : ByteArray, offset : UInt, length : UInt = 0) : Void
 	{
 		src.readBytes(ApplicationDomain.currentDomain.domainMemory, offset, length);
 	}
 	
 	// Writes one integer into flash.Memory at the given address, in big-endian order
-	@:protected private static inline function writeI32BE(addr: UInt, value : UInt) : Void
+	private static inline function writeI32BE(addr: UInt, value : UInt) : Void
 	{
 		Memory.setByte(addr, value >>> 24);
 		Memory.setByte(addr + 1, value >>> 16);
@@ -322,12 +322,12 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	@:protected private static function writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
+	private static function writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
 	{
 		_writeIDATChunk(img, startY, endY, deflateStream, png);
 	}
 	
-	@:protected private static inline function _writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
+	private static inline function _writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
 	{
 		var width = img.width;
 		var height = endY - startY;
@@ -523,13 +523,13 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	@:protected private static inline function writeIENDChunk(png : ByteArray)
+	private static inline function writeIENDChunk(png : ByteArray)
 	{
 		writeChunk(png, 0x49454E44, 0);
 	}
 	
 
-	@:protected private static inline function writeChunk(png : ByteArray, type : Int, chunkLength : Int) : Void
+	private static inline function writeChunk(png : ByteArray, type : Int, chunkLength : Int) : Void
 	{
 		var len = chunkLength;
 		
@@ -584,9 +584,9 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 	
-	@:protected private static var crcComputed = false;
+	private static var crcComputed = false;
 	
-	@:protected private static inline function initialize() : Void
+	private static inline function initialize() : Void
 	{
 		sprite = new Sprite();
 		
@@ -627,7 +627,7 @@ class PNGEncoder2 extends EventDispatcher
 		}
 	}
 	
-	@:protected private static inline function crcTable(index : UInt) : UInt
+	private static inline function crcTable(index : UInt) : UInt
 	{
 		return Memory.getI32((index & 0xFF) << 2);
 	}
