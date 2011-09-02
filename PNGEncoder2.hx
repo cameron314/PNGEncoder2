@@ -47,16 +47,15 @@ import flash.Lib;
 import flash.Memory;
 import flash.system.ApplicationDomain;
 import flash.system.System;
-import flash.text.ime.CompositionAttributeRange;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
-import DeflateStream;
 import flash.Vector;
+import DeflateStream;
 
 
 // Separate public interface from private implementation because all
 // members appear as public in SWC
-class PNGEncoder2 implements IEventDispatcher
+class PNGEncoder2 extends EventDispatcher
 {
 	@:protected private var __impl : PNGEncoder2Impl;
 	
@@ -97,38 +96,14 @@ class PNGEncoder2 implements IEventDispatcher
 	
 	private inline function new(image : BitmapData)
 	{
-		__impl = new PNGEncoder2Impl(image);
-	}
-	
-	
-	public function addEventListener(type : String, listener : Dynamic -> Void, ?useCapture : Bool = false, ?priority : Int = 0, ?useWeakReference : Bool = false) : Void
-	{
-		__impl.addEventListener(type, listener, useCapture, priority, useWeakReference);
-	}
-	
-	public function dispatchEvent(event : Event) : Bool
-	{
-		return __impl.dispatchEvent(event);
-	}
-	
-	public function hasEventListener(type : String) : Bool
-	{
-		return __impl.hasEventListener(type);
-	}
-	
-	public function removeEventListener(type : String, listener : Dynamic -> Void, ?useCapture : Bool = false) : Void
-	{
-		__impl.removeEventListener(type, listener, useCapture);
-	}
-	
-	public function willTrigger(type : String) : Bool
-	{
-		return __impl.willTrigger(type);
+		super();
+		
+		__impl = new PNGEncoder2Impl(image, this);
 	}
 }
 
 
-@:protected private class PNGEncoder2Impl extends EventDispatcher
+@:protected private class PNGEncoder2Impl
 {
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
@@ -143,6 +118,7 @@ class PNGEncoder2 implements IEventDispatcher
 	public var png : ByteArray;
 	
 	private var img : BitmapData;
+	private var dispatcher : IEventDispatcher;
 	private var deflateStream : DeflateStream;
 	private var currentY : Int;
 	private var step : Int;
@@ -209,14 +185,12 @@ class PNGEncoder2 implements IEventDispatcher
 	
 	
 	
-	public function new(image : BitmapData)
+	public inline function new(image : BitmapData, dispatcher : IEventDispatcher)
 	{
-		super();
-		
-		_new(image);
+		_new(image, dispatcher);
 	}
 	
-	private inline function _new(image : BitmapData)
+	private inline function _new(image : BitmapData, dispatcher : IEventDispatcher)
 	{
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
@@ -224,6 +198,7 @@ class PNGEncoder2 implements IEventDispatcher
 		png = beginEncoding(img);
 		currentY = 0;
 		done = false;
+		this.dispatcher = dispatcher;
 		
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 		
@@ -299,7 +274,7 @@ class PNGEncoder2 implements IEventDispatcher
 			Memory.select(oldFastMem);
 			
 			for (event in queuedEvents) {
-				dispatchEvent(event);
+				dispatcher.dispatchEvent(event);
 			}
 		}
 	}
