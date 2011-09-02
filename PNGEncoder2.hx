@@ -49,6 +49,7 @@ import flash.system.System;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
 import DeflateStream;
+import flash.Vector;
 
 
 /**
@@ -71,6 +72,7 @@ class PNGEncoder2 extends EventDispatcher
 	private var deflateStream : DeflateStream;
 	private var currentY : Int;
 	private var step : Int;
+	private var done : Bool;
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
@@ -174,6 +176,7 @@ class PNGEncoder2 extends EventDispatcher
 		img = image;
 		png = beginEncoding(img);
 		currentY = 0;
+		done = false;
 		
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 		
@@ -215,47 +218,56 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private inline function _onEnterFrame()
 	{
-		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
-		Memory.select(data);
-		
-		var bytesPerPixel = img.transparent ? 4 : 3;
-		var totalBytes = bytesPerPixel * img.width * img.height;
-		
-		if (currentY >= img.height) {
-			// Finished encoding the entire image in the initial setup
-			Memory.select(oldFastMem);
-			dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, false, false, totalBytes, totalBytes));
-			
+		if (!done) {
+			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 			Memory.select(data);
-			finalize(oldFastMem);
-		}
-		else {
-			var next = Std.int(Math.min(currentY + step, img.height));
-			writeIDATChunk(img, currentY, next, deflateStream, png);
-			currentY = next;
 			
-			var currentBytes = bytesPerPixel * img.width * currentY;
+			// Queue events instead of dispatching them inline
+			// because during a call to dispatchEvent *other* pending events
+			// might be dispatched too, possibly resulting in this method being
+			// called again in a re-entrant fashion (which doesn't play nicely
+			// with storing/retrieving oldFastMem).
+			var queuedEvents = new Vector<Event>();
+			
+			var bytesPerPixel = img.transparent ? 4 : 3;
+			var totalBytes = bytesPerPixel * img.width * img.height;
+			
+			if (currentY >= img.height) {
+				// Finished encoding the entire image in the initial setup
+				queuedEvents.push(new ProgressEvent(ProgressEvent.PROGRESS, false, false, totalBytes, totalBytes));
+				finalize(queuedEvents);
+			}
+			else {
+				var next = Std.int(Math.min(currentY + step, img.height));
+				writeIDATChunk(img, currentY, next, deflateStream, png);
+				currentY = next;
+				
+				var currentBytes = bytesPerPixel * img.width * currentY;
+				
+				queuedEvents.push(new ProgressEvent(ProgressEvent.PROGRESS, false, false, currentBytes, totalBytes));
+				
+				finalize(queuedEvents);
+			}
 			
 			Memory.select(oldFastMem);
-			dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, false, false, currentBytes, totalBytes));
 			
-			Memory.select(data);
-			finalize(oldFastMem);
+			for (event in queuedEvents) {
+				dispatchEvent(event);
+			}
 		}
-		
-		Memory.select(oldFastMem);
 	}
 	
 	
-	private inline function finalize(oldFastMem : ByteArray)
+	private inline function finalize(queuedEvents : Vector<Event>)
 	{
 		if (currentY >= img.height) {
+			done = true;
+			
 			sprite.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
 			
 			endEncoding(png);
 			
-			Memory.select(oldFastMem);
-			dispatchEvent(new Event(Event.COMPLETE));
+			queuedEvents.push(new Event(Event.COMPLETE));
 		}
 	}
 	
