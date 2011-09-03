@@ -50,7 +50,7 @@ class Test extends Sprite
 		
 		
 		/*var that = this;
-		PNGEncoder2.level = CompressionLevel.NORMAL;
+		//PNGEncoder2.level = CompressionLevel.NORMAL;
 		var encoder = PNGEncoder2.encodeAsync(bmp);
 		encoder.addEventListener(Event.COMPLETE, function (e) {
 			trace("Async complete");

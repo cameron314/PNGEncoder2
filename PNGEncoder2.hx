@@ -111,6 +111,8 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
+	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Must be power of 2. Number of frames to calculate averages from
+	private static inline var MIN_PIXELS_PER_FRAME = 16 * 1024;
 	private static var data : ByteArray;
 	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
 	private static var encoding = false;
@@ -124,6 +126,11 @@ class PNGEncoder2 extends EventDispatcher
 	private var dispatcher : IEventDispatcher;
 	private var deflateStream : DeflateStream;
 	private var currentY : Int;
+	private var msPerFrame : Vector<Int>;
+	private var msPerFrameIndex : Int;
+	private var msPerLine : Vector<Float>;
+	private var msPerLineIndex : Int;
+	private var lastFrameEnd : Int;
 	private var step : Int;
 	private var done : Bool;
 	
@@ -202,10 +209,15 @@ class PNGEncoder2 extends EventDispatcher
 		currentY = 0;
 		done = false;
 		this.dispatcher = dispatcher;
+		msPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
+		msPerFrameIndex = 0;
+		msPerLine = new Vector<Float>(FRAME_AVG_SMOOTH_COUNT, true);
+		msPerLineIndex = 0;
+		lastFrameEnd = Lib.getTimer();
 		
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 		
-		if (img.width > 0) {
+		if (img.width > 0 && img.height > 0) {
 			// Determine proper step
 			var startTime = Lib.getTimer();
 			
@@ -214,25 +226,63 @@ class PNGEncoder2 extends EventDispatcher
 			writeIDATChunk(img, 0, height, deflateStream, png);
 			
 			var endTime = Lib.getTimer();
-			var ms = endTime - startTime;
+			updateMsPerLine(endTime - startTime, height);
 			
-			// Use 90% of available milliseconds per frame
+			// Use unmeasured FPS as guestimate to seed msPerFrame
 			var fps = Lib.current == null || Lib.current.stage == null ? 24 : Lib.current.stage.frameRate;
-			var targetMs = Std.int(1 / fps * 1000 * 0.9);
+			updateMsPerFrame(Std.int(1.0 / fps * 1000));
 			
-			// Ensure step is at least 8K pixels at once
-			step = Math.ceil(Math.max(targetMs / ms * height, 8 * 1024 / img.width));
+			updateStep();
 			
 			currentY = height;
 		}
 		else {
-			// Zero-width
+			// A dimension is 0
 			step = img.height;
 		}
 		
 		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
 		
 		Memory.select(oldFastMem);
+	}
+	
+	
+	private inline function updateMsPerLine(ms : Int, lines : Int)
+	{
+		msPerLine[msPerLineIndex] = ms / lines;
+		msPerLineIndex = (msPerLineIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);	// Cheap modulus
+	}
+	
+	private inline function updateMsPerFrame(ms : Int)
+	{
+		msPerFrame[msPerFrameIndex] = ms;
+		msPerFrameIndex = (msPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);	// Cheap modulus
+	}
+	
+	private function updateStep()
+	{
+		// Calculate averages
+		var targetMs = 0.0;
+		var count = 0;
+		for (ms in msPerFrame) {
+			if (ms != 0) {
+				targetMs += ms;
+				++count;
+			}
+		}
+		targetMs = targetMs / count * 0.95;		// Use 95% of available ms per frame
+		
+		var avgMsPerLine = 0.0;
+		count = 0;
+		for (ms in msPerLine) {
+			if (ms != 0) {
+				avgMsPerLine += ms;
+				++count;
+			}
+		}
+		avgMsPerLine = avgMsPerLine / count;
+		
+		step = Math.ceil(Math.max(targetMs / avgMsPerLine, MIN_PIXELS_PER_FRAME / img.width));
 	}
 	
 	
@@ -246,6 +296,9 @@ class PNGEncoder2 extends EventDispatcher
 		if (!done) {
 			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 			Memory.select(data);
+			
+			var start = Lib.getTimer();
+			updateMsPerFrame(start - lastFrameEnd);
 			
 			// Queue events instead of dispatching them inline
 			// because during a call to dispatchEvent *other* pending events
@@ -272,9 +325,14 @@ class PNGEncoder2 extends EventDispatcher
 				queuedEvents.push(new ProgressEvent(ProgressEvent.PROGRESS, false, false, currentBytes, totalBytes));
 				
 				finalize(queuedEvents);
+				
+				updateMsPerLine(Lib.getTimer() - start, step);
+				updateStep();
 			}
 			
 			Memory.select(oldFastMem);
+			
+			lastFrameEnd = Lib.getTimer();
 			
 			for (event in queuedEvents) {
 				dispatcher.dispatchEvent(event);
