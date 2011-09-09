@@ -110,13 +110,14 @@ class DeflateStream
 	private static inline var MAX_LENGTH = 258;
 	private static inline var LENGTHS = 256;
 	
-	public static inline var SCRATCH_MEMORY_SIZE : Int = (32 + 19 + MAX_SYMBOLS_IN_TREE * 2 + LENGTHS + MIN_LENGTH) * 4;		// Bytes
+	public static inline var SCRATCH_MEMORY_SIZE : Int = (32 + 19 + MAX_SYMBOLS_IN_TREE * 2 + LENGTHS + MIN_LENGTH + 512) * 4;		// Bytes
 	
 	private static inline var DISTANCE_OFFSET : Int = MAX_SYMBOLS_IN_TREE * 4;		// Where distance lookup is stored in scratch memory
 	private static inline var CODE_LENGTH_OFFSET : Int = DISTANCE_OFFSET + 32 * 4;
 	private static inline var HUFFMAN_SCRATCH_OFFSET : Int = CODE_LENGTH_OFFSET + 19 * 4;
 	private static inline var LENGTH_EXTRA_BITS_OFFSET : Int = HUFFMAN_SCRATCH_OFFSET + MAX_SYMBOLS_IN_TREE * 4;
-	// Next offset: LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4
+	private static inline var DIST_EXTRA_BITS_OFFSET : Int = LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4;
+	// Next offset: DIST_EXTRA_BITS_OFFSET + 512 * 4
 	
 	private static inline var OUTPUT_BYTES_BEFORE_NEW_BLOCK : Int = 48 * 1024;	// Only used with FAST
 	private static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
@@ -125,6 +126,10 @@ class DeflateStream
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
 	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
 	private static inline var EOB = 256;		// End of block symbol
+	private static inline var HASH_SIZE_BITS = 13;
+	private static inline var HASH_SIZE = 1 << HASH_SIZE_BITS;		// # of 4-byte slots
+	private static inline var HASH_MASK = HASH_SIZE - 1;
+	private static inline var WINDOW_SIZE = 32768;
 	
 	private var level : CompressionLevel;
 	private var zlib : Bool;
@@ -508,7 +513,113 @@ class DeflateStream
 	
 	private inline function _fastWriteHuffmanAndLZ77(offset : Int, end : Int)
 	{
-		throw new Error("Not implemented");
+		var cappedEnd, safeEnd;
+		
+		var length;
+		var lengthInfo;
+		var distance;
+		var distanceInfo;
+		var hashOffset;
+		var i, j, k;
+		
+		// blockInProgress should always be false here
+		
+		
+		var hashAddr = currentAddr + _maxOutputBufferSize(end - offset) - HASH_SIZE * 4;
+		
+		// Initialize hash table to invalid data (HASH_SIZE is divisble by 8)
+		i = hashAddr + HASH_SIZE * 4 - 32;
+		while (i >= hashAddr) {
+			Memory.setI32(i, end);
+			Memory.setI32(i + 4, end);
+			Memory.setI32(i + 8, end);
+			Memory.setI32(i + 12, end);
+			Memory.setI32(i + 16, end);
+			Memory.setI32(i + 20, end);
+			Memory.setI32(i + 24, end);
+			Memory.setI32(i + 28, end);
+			i -= 32;
+		}
+		
+		while (end - offset > 0) {
+			// Assume ~50% compression ratio
+			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
+			safeEnd = cappedEnd - 4;		// Can read up to 4 ahead without worrying
+			
+			beginBlock();
+			createAndWriteHuffmanTrees(offset, cappedEnd);
+			
+			i = offset;
+			while (i < safeEnd) {
+				hashOffset = hash(i);
+				j = Memory.getI32(hashAddr + hashOffset);
+				
+				if (j < cappedEnd && (Memory.getI32(j) & 0xFFFFFF) == (Memory.getI32(i) & 0xFFFFFF)) {
+					length = 0;
+					k = i;
+					while (k < cappedEnd && Memory.getByte(j) == Memory.getByte(k) && length < MAX_LENGTH) {
+						++j;
+						++k;
+						++length;
+					}
+					
+					// Update hash before incrementing
+					Memory.setI32(hashAddr + hashOffset, i);
+					
+					if (length >= MIN_LENGTH && (distance = i - (j - length)) <= WINDOW_SIZE) {
+						lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
+						writeSymbol(lengthInfo >>> 16);
+						writeBits(length - (lengthInfo & 0x1FFF), (lengthInfo & 0xFF00) >>> 13);
+						
+						distanceInfo = getDistanceInfo(distance);
+						writeSymbol(distanceInfo >>> 24, DISTANCE_OFFSET);
+						writeBits(distance - (distanceInfo & 0xFFFF), (distanceInfo & 0xFF0000) >>> 16);
+						
+						i += length;
+						
+						// Update hash after
+						Memory.setI32(hashAddr + hash(i - 1), i - 1);
+					}
+					else {
+						writeSymbol(Memory.getByte(i));
+						++i;
+					}
+				}
+				else {
+					// No luck with hash table. Output literal:
+					writeSymbol(Memory.getByte(i));
+					
+					Memory.setI32(hashAddr + hashOffset, i);
+					
+					++i;
+				}
+			}
+			
+			while (i < cappedEnd) {
+				writeSymbol(Memory.getByte(i));
+				++i;
+			}
+			
+			endBlock();
+			
+			offset = cappedEnd;
+		}
+	}
+	
+	
+	// Returns the index into the hash table for the first few bytes
+	// starting at addr
+	private inline function hash(addr : Int)
+	{
+		// Borrowed from FastLZ: http://fastlz.googlecode.com/svn/trunk/fastlz.c
+		var index = Memory.getByte(addr) | (Memory.getByte(addr + 1) << 8);
+		index ^=
+			(Memory.getByte(addr + 1) | (Memory.getByte(addr + 2) << 8)) ^
+			(index >>> (16 - HASH_SIZE_BITS))
+		;
+		
+		index &= HASH_MASK;
+		return index << 2;		// Multiply by 4 since each entry is 4 bytes
 	}
 	
 	
@@ -606,6 +717,7 @@ class DeflateStream
 		var blockCount;
 		var blockOverhead;
 		var multiplier = 1;
+		var extraScratch = 0;
 		
 		if (level == UNCOMPRESSED) {
 			blockOverhead = 8;		// 1B block header + 4B header + 3B max needed by writeBits
@@ -618,6 +730,10 @@ class DeflateStream
 			}
 			else {
 				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
+				
+				if (level == MAXIMUM) {
+					extraScratch = HASH_SIZE * 4;
+				}
 			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
@@ -629,7 +745,7 @@ class DeflateStream
 		}
 		
 		// Include extra block to account for the one written during finalize()
-		return inputByteCount * multiplier + blockOverhead * (blockCount + 1);
+		return inputByteCount * multiplier + blockOverhead * (blockCount + 1) + extraScratch;
 	}
 	
 	
@@ -704,6 +820,60 @@ class DeflateStream
 			
 			Memory.setI32(offset + 258 * 4, (285 << 16) | 258);		// 258
 		}
+		
+		
+		if (level == MAXIMUM) {
+			// Write distance code, extra bits and lower bound that must be subtracted to
+			// get the extra bits value for all the possible distances.
+			// This information is stuffed into 4 bytes per length, accessible
+			// by getDistanceInfo(distance).
+			// Uppermost byte: Distance code
+			// Next byte: Extra bit count
+			// Lower 2 bytes: The lower bound
+			
+			var offset = scratchAddr + DIST_EXTRA_BITS_OFFSET;
+			
+			
+			// 1-4:
+			Memory.setI32(offset + 1 * 4, (0 << 24) | 1);
+			Memory.setI32(offset + 2 * 4, (1 << 24) | 2);
+			Memory.setI32(offset + 3 * 4, (2 << 24) | 3);
+			Memory.setI32(offset + 4 * 4, (3 << 24) | 4);
+			
+			// 5-256
+			var base = 5;
+			var symbol = 4;
+			for (extraBits in 1 ... 7) {
+				for (_ in 0 ... 2) {
+					for (i in base ... base + (1 << extraBits)) {
+						Memory.setI32(offset + i * 4, (symbol << 24) | (extraBits << 16) | base);
+					}
+					base += 1 << extraBits;
+					++symbol;
+				}
+			}
+			
+			offset += 256 * 4;
+			
+			// 257-32768 (in chunks of 128 distances)
+			for (extraBits in 7 ... 14) {
+				for (_ in 0 ... 2) {
+					for (i in base >>> 7 ... (base >>> 7) + (1 << (extraBits - 7))) {
+						Memory.setI32(offset + i * 4, (symbol << 24) | (extraBits << 16) | base);
+					}
+					base += 1 << extraBits;
+					++symbol;
+				}
+			}
+		}
+	}
+	
+	
+	private inline function getDistanceInfo(distance : Int)
+	{
+		return Memory.getI32(scratchAddr + DIST_EXTRA_BITS_OFFSET +
+			((distance <= 256 ? distance : 256 + ((distance - 1) >>> 7)) << 2)
+		);
 	}
 	
 	
@@ -984,6 +1154,10 @@ class DeflateStream
 		}
 		else if (level == MAXIMUM) {
 			// TODO
+			n = 286;
+			for (symbol in 0 ... n) {
+				Memory.setI32(scratchAddr + symbol * 4, 1);
+			}
 		}
 		
 		
@@ -1003,7 +1177,10 @@ class DeflateStream
 			++n;
 		}
 		else if (level == MAXIMUM) {
-			// TODO
+			n = 30;
+			for (i in 0 ... n) {
+				Memory.setI32(scratchOffset + i * 4, n - i);
+			}
 		}
 		
 		HuffmanTree.weightedAlphabetToCodes(scratchOffset, scratchOffset + n * 4, MAX_CODE_LENGTH);
