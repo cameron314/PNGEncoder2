@@ -364,13 +364,13 @@ class DeflateStream
 		}
 		
 		if (level == FAST) {
-			_fastWriteHuffmanOnly(offset, end);
+			_fastWriteFast(offset, end);
 		}
 		else if (level == NORMAL) {
-			_fastWriteRunLength(offset, end);
+			_fastWriteNormal(offset, end);
 		}
 		else if (level == MAXIMUM) {
-			_fastWriteHuffmanAndLZ77(offset, end);
+			_fastWriteMaximum(offset, end);
 		}
 		else {
 			throw new Error("Compression level not supported");
@@ -378,7 +378,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastWriteHuffmanOnly(offset : Int, end : Int)
+	private inline function _fastWriteFast(offset : Int, end : Int)
 	{
 		//var startTime = Lib.getTimer();
 		
@@ -465,7 +465,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastWriteRunLength(offset : Int, end : Int)
+	private inline function _fastWriteNormal(offset : Int, end : Int)
 	{
 		var cappedEnd;
 		
@@ -511,7 +511,7 @@ class DeflateStream
 	}
 	
 	
-	private inline function _fastWriteHuffmanAndLZ77(offset : Int, end : Int)
+	private inline function _fastWriteMaximum(offset : Int, end : Int)
 	{
 		var cappedEnd, safeEnd;
 		
@@ -530,14 +530,14 @@ class DeflateStream
 		// Initialize hash table to invalid data (HASH_SIZE is divisble by 8)
 		i = hashAddr + HASH_SIZE * 4 - 32;
 		while (i >= hashAddr) {
-			Memory.setI32(i, end);
-			Memory.setI32(i + 4, end);
-			Memory.setI32(i + 8, end);
-			Memory.setI32(i + 12, end);
-			Memory.setI32(i + 16, end);
-			Memory.setI32(i + 20, end);
-			Memory.setI32(i + 24, end);
-			Memory.setI32(i + 28, end);
+			Memory.setI32(i, -1);
+			Memory.setI32(i + 4, -1);
+			Memory.setI32(i + 8, -1);
+			Memory.setI32(i + 12, -1);
+			Memory.setI32(i + 16, -1);
+			Memory.setI32(i + 20, -1);
+			Memory.setI32(i + 24, -1);
+			Memory.setI32(i + 28, -1);
 			i -= 32;
 		}
 		
@@ -554,9 +554,10 @@ class DeflateStream
 				hashOffset = hash(i);
 				j = Memory.getI32(hashAddr + hashOffset);
 				
-				if (j < cappedEnd && (Memory.getI32(j) & 0xFFFFFF) == (Memory.getI32(i) & 0xFFFFFF)) {
-					length = 0;
-					k = i;
+				if (j >= 0 && (Memory.getI32(j) & 0xFFFFFF) == (Memory.getI32(i) & 0xFFFFFF)) {
+					length = 3;
+					j += 3;
+					k = i + 3;
 					while (k < cappedEnd && Memory.getByte(j) == Memory.getByte(k) && length < MAX_LENGTH) {
 						++j;
 						++k;
@@ -566,8 +567,9 @@ class DeflateStream
 					// Update hash before incrementing
 					Memory.setI32(hashAddr + hashOffset, i);
 					
-					if (length >= MIN_LENGTH && (distance = i - (j - length)) <= WINDOW_SIZE) {
-						lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
+					distance = i - (j - length);
+					if (distance <= WINDOW_SIZE) {
+						lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2));
 						writeSymbol(lengthInfo >>> 16);
 						writeBits(length - (lengthInfo & 0x1FFF), (lengthInfo & 0xFF00) >>> 13);
 						
@@ -577,8 +579,10 @@ class DeflateStream
 						
 						i += length;
 						
-						// Update hash after
-						Memory.setI32(hashAddr + hash(i - 1), i - 1);
+						if (i < safeEnd) {
+							// Update hash after
+							Memory.setI32(hashAddr + hash(i - 1), i - 1);
+						}
 					}
 					else {
 						writeSymbol(Memory.getByte(i));
@@ -1035,7 +1039,7 @@ class DeflateStream
 	{
 		var n = 0;
 		
-		if (level == FAST) {
+		if (level == FAST || level == MAXIMUM) {
 			n = 257;		// 256 literals plus EOB
 			
 			// Literals
@@ -1152,11 +1156,20 @@ class DeflateStream
 				Memory.setI32(scratchAddr + symbol * 4, Memory.getI32(scratchAddr + symbol * 4) + 1);
 			}
 		}
-		else if (level == MAXIMUM) {
-			// TODO
+		
+		
+		if (level == MAXIMUM) {
+			// Assume lengths are very common (especially short ones)
+			
 			n = 286;
-			for (symbol in 0 ... n) {
-				Memory.setI32(scratchAddr + symbol * 4, 1);
+			for (symbol in 0 ... 256) {
+				Memory.setI32(scratchAddr + symbol * 4, 2);
+			}
+			
+			Memory.setI32(scratchAddr + EOB * 4, 1);
+			
+			for (symbol in 257 ... n) {
+				Memory.setI32(scratchAddr + symbol * 4, n - symbol + 3);
 			}
 		}
 		
@@ -1266,7 +1279,7 @@ private class HuffmanTree
 	
 	// Converts an array of weights to a lookup table of codes.
 	// The weights must be stored in 32-bit integers in fast memory, from offset
-	// to end. The symbols are assumed to be the integers 0...(end - offset).
+	// to end. The symbols are assumed to be the integers 0 ... (end - offset).
 	// The codes will be stored starting at offset, replacing the weights.
 	// Each code entry contains the code and the code length.
 	// The code is stored in the highest 16 bits, and the length in the lowest.
