@@ -64,6 +64,7 @@ As such, here is the zlib license in its entirety (from zlib.h):
 // - "Length-Limitted Huffman Codes" (http://cbloomrants.blogspot.com/2010/07/07-02-10-length-limitted-huffman-codes.html)
 // - "Length-Limitted Huffman Codes Heuristic" (http://cbloomrants.blogspot.com/2010/07/07-03-10-length-limitted-huffman-codes.html)
 // - A C implementation of an in-place Huffman code length generator (http://ww2.cs.mu.oz.au/~alistair/inplace.c)
+// - FastLZ source: http://fastlz.googlecode.com/svn/trunk/fastlz.c
 // - Reverse Parallel algorithm for reversing bits (http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel)
 // - Wikipedia article on canonical Huffman codes (http://en.wikipedia.org/wiki/Canonical_Huffman_code)
 // - http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
@@ -81,8 +82,7 @@ import flash.utils.Endian;
 enum CompressionLevel {
 	UNCOMPRESSED;		// Fastest
 	FAST;				// Huffman coding only
-	NORMAL;				// Huffman + run length encoding
-	MAXIMUM;			// Huffman + proper LZ77 compression
+	NORMAL;				// Huffman + fast LZ77 compression
 }
 
 
@@ -369,9 +369,6 @@ class DeflateStream
 		else if (level == NORMAL) {
 			_fastWriteNormal(offset, end);
 		}
-		else if (level == MAXIMUM) {
-			_fastWriteMaximum(offset, end);
-		}
 		else {
 			throw new Error("Compression level not supported");
 		}
@@ -466,52 +463,6 @@ class DeflateStream
 	
 	
 	private inline function _fastWriteNormal(offset : Int, end : Int)
-	{
-		var cappedEnd;
-		
-		var length;
-		var lengthInfo;
-		var i, j;
-		
-		// blockInProgress should always be false here
-		
-		while (end - offset > 0) {
-			// Assume ~50% compression ratio
-			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
-			
-			beginBlock();
-			createAndWriteHuffmanTrees(offset, cappedEnd);
-			
-			i = offset;
-			while (i < cappedEnd) {
-				j = i + 1;
-				while (j < cappedEnd && Memory.getByte(j) == Memory.getByte(i) && j - i <= MAX_LENGTH) {
-					++j;
-				}
-				
-				// Write the current byte whether it repeats or not
-				writeSymbol(Memory.getByte(i));
-				++i;
-				
-				if (j - i >= MIN_LENGTH) {
-					length = j - i;
-					lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4);
-					writeSymbol(lengthInfo >>> 16);
-					writeBits(length - (lengthInfo & 0x1FFF), (lengthInfo & 0xFF00) >>> 13);
-					writeSymbol(0, DISTANCE_OFFSET);	// Distance of 1
-					
-					i += length;
-				}
-			}
-			
-			endBlock();
-			
-			offset = cappedEnd;
-		}
-	}
-	
-	
-	private inline function _fastWriteMaximum(offset : Int, end : Int)
 	{
 		var cappedEnd, safeEnd;
 		
@@ -734,10 +685,7 @@ class DeflateStream
 			}
 			else {
 				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
-				
-				if (level == MAXIMUM) {
-					extraScratch = HASH_SIZE * 4;
-				}
+				extraScratch = HASH_SIZE * 4;
 			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
@@ -787,7 +735,7 @@ class DeflateStream
 	
 	private inline function setupStaticScratchMem()
 	{
-		if (level == NORMAL || level == MAXIMUM) {
+		if (level == NORMAL) {
 			// Write length code, extra bits and lower bound that must be subtracted to
 			// get the extra bits value for all the possible lengths.
 			// This information is stuffed into 4 bytes per length, addressable
@@ -823,10 +771,11 @@ class DeflateStream
 			}
 			
 			Memory.setI32(offset + 258 * 4, (285 << 16) | 258);		// 258
-		}
-		
-		
-		if (level == MAXIMUM) {
+			
+			
+			
+			
+			
 			// Write distance code, extra bits and lower bound that must be subtracted to
 			// get the extra bits value for all the possible distances.
 			// This information is stuffed into 4 bytes per length, accessible
@@ -835,7 +784,7 @@ class DeflateStream
 			// Next byte: Extra bit count
 			// Lower 2 bytes: The lower bound
 			
-			var offset = scratchAddr + DIST_EXTRA_BITS_OFFSET;
+			offset = scratchAddr + DIST_EXTRA_BITS_OFFSET;
 			
 			
 			// 1-4:
@@ -845,8 +794,8 @@ class DeflateStream
 			Memory.setI32(offset + 4 * 4, (3 << 24) | 4);
 			
 			// 5-256
-			var base = 5;
-			var symbol = 4;
+			base = 5;
+			symbol = 4;
 			for (extraBits in 1 ... 7) {
 				for (_ in 0 ... 2) {
 					for (i in base ... base + (1 << extraBits)) {
@@ -1039,7 +988,7 @@ class DeflateStream
 	{
 		var n = 0;
 		
-		if (level == FAST || level == MAXIMUM) {
+		if (level == FAST) {
 			n = 257;		// 256 literals plus EOB
 			
 			// Literals
@@ -1110,55 +1059,6 @@ class DeflateStream
 			}
 		}
 		else if (level == NORMAL) {
-			// Get exact weights for given bytes; this is possible since all bytes
-			// going into the block are known in advance (which is not the case with
-			// the FAST level)
-			
-			n = 0;
-			for (symbol in 0 ... 286) {
-				Memory.setI32(scratchAddr + symbol * 4, 0);
-			}
-			
-			// Weight literals and lengths
-			var byte;
-			var length, lengthCode;
-			var j;
-			var i = offset;
-			while (i < end) {
-				j = i + 1;
-				byte = Memory.getByte(i);
-				while (j < end && Memory.getByte(j) == byte && j - i <= MAX_LENGTH) {
-					++j;
-				}
-				
-				// Increment weight for the current symbol
-				Memory.setI32(scratchAddr + byte * 4, Memory.getI32(scratchAddr + byte * 4) + 1);
-				++i;
-				
-				if (j - i >= MIN_LENGTH) {
-					length = j - i;
-					lengthCode = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + length * 4) >>> 16;
-					Memory.setI32(scratchAddr + lengthCode * 4, Memory.getI32(scratchAddr + lengthCode * 4) + 1);
-					
-					i += length;
-				}
-			}
-			
-			// Find last non-zero weight (all symbols up to that point will have to be included)
-			for (symbol in 0 ... 286) {
-				if (Memory.getI32(scratchAddr + symbol * 4) > 0) {
-					n = symbol + 1;
-				}
-			}
-			
-			// Make sure all weights up to the last one are weighted > 0
-			for (symbol in 0 ... n) {
-				Memory.setI32(scratchAddr + symbol * 4, Memory.getI32(scratchAddr + symbol * 4) + 1);
-			}
-		}
-		
-		
-		if (level == MAXIMUM) {
 			// Assume lengths are very common (especially short ones)
 			
 			n = 286;
@@ -1186,10 +1086,6 @@ class DeflateStream
 		var n = 0;
 		
 		if (level == NORMAL) {
-			Memory.setI32(scratchOffset, 100);
-			++n;
-		}
-		else if (level == MAXIMUM) {
 			n = 30;
 			for (i in 0 ... n) {
 				Memory.setI32(scratchOffset + i * 4, n - i);
