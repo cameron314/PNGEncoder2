@@ -130,10 +130,12 @@ class PNGEncoder2 extends EventDispatcher
 	private var msPerFrameIndex : Int;
 	private var msPerLine : Vector<Float>;
 	private var msPerLineIndex : Int;
-	private var lastFrameEnd : Int;
+	private var lastFrameStart : Int;
 	private var step : Int;
+	private var targetMs : Float;
 	private var done : Bool;
 	
+	private var frameCount : Int;
 	
 	public static inline function encode(img : BitmapData) : ByteArray
 	{
@@ -197,32 +199,41 @@ class PNGEncoder2 extends EventDispatcher
 	
 	public inline function new(image : BitmapData, dispatcher : IEventDispatcher)
 	{
-		_new(image, dispatcher);
+		_new(image, dispatcher);		// Constructors are slow -- delegate to function
 	}
 	
-	private inline function _new(image : BitmapData, dispatcher : IEventDispatcher)
+	private function _new(image : BitmapData, dispatcher : IEventDispatcher)
 	{
+		fastNew(image, dispatcher);
+	}
+	
+	private inline function fastNew(image : BitmapData, dispatcher : IEventDispatcher)
+	{
+		lastFrameStart = Lib.getTimer();
+		
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
 		img = image;
 		png = beginEncoding(img);
 		currentY = 0;
+		frameCount = 0;
 		done = false;
 		this.dispatcher = dispatcher;
 		msPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
 		msPerFrameIndex = 0;
 		msPerLine = new Vector<Float>(FRAME_AVG_SMOOTH_COUNT, true);
 		msPerLineIndex = 0;
-		lastFrameEnd = Lib.getTimer();
 		
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
+		
+		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
 		
 		if (img.width > 0 && img.height > 0) {
 			// Determine proper step
 			var startTime = Lib.getTimer();
 			
-			// Write first ~15K pixels to see how fast it is
-			var height = Std.int(Math.min(15 * 1024 / img.width, img.height));
+			// Write first ~20K pixels to see how fast it is
+			var height = Std.int(Math.min(20 * 1024 / img.width, img.height));
 			writeIDATChunk(img, 0, height, deflateStream, png);
 			
 			var endTime = Lib.getTimer();
@@ -241,48 +252,100 @@ class PNGEncoder2 extends EventDispatcher
 			step = img.height;
 		}
 		
-		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
-		
 		Memory.select(oldFastMem);
 	}
 	
 	
 	private inline function updateMsPerLine(ms : Int, lines : Int)
 	{
-		msPerLine[msPerLineIndex] = ms / lines;
-		msPerLineIndex = (msPerLineIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);	// Cheap modulus
+		if (lines != 0) {
+			if (ms == 0) {
+				// Can occasionally happen because timer resolution on Windows is limited to 10ms
+				ms = 5;		// Guess!
+			}
+			
+			msPerLine[msPerLineIndex] = ms * 1.0 / lines;
+			msPerLineIndex = (msPerLineIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);	// Cheap modulus
+		}
 	}
 	
 	private inline function updateMsPerFrame(ms : Int)
 	{
 		msPerFrame[msPerFrameIndex] = ms;
-		msPerFrameIndex = (msPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);	// Cheap modulus
+		msPerFrameIndex = (msPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);		// Cheap modulus
 	}
 	
-	private function updateStep()
+	private inline function updateStep()
 	{
-		// Calculate averages
-		var targetMs = 0.0;
-		var count = 0;
-		for (ms in msPerFrame) {
-			if (ms != 0) {
-				targetMs += ms;
-				++count;
+		// Data: We have the last FRAME_AVG_SMOOTH_COUNT measurements
+		// of time between frames.
+		
+		// Goal: Maximize the amount of processing we do each frame without
+		// causing the frame rate to dip.
+		// The time between frames should be stable, leading to deltas
+		// near 0. If there are spare CPU cycles between frames, then
+		// processing more data will not cause the frame rate to dip.
+		// We constantly monitor the average change in time-per-frame
+		// from the previous frame to the next. If the delta is positive
+		// (i.e. the FPS is rising), that's good, and we take advantage
+		// and do more processing (to ensure we're using all free CPU
+		// cycles). If the delta is negative, it means we (or someone else)
+		// is doing too much work per frame, and we should cut back on
+		// the work we do per frame (and there's a minimum to ensure that
+		// we at least get *some* work done each frame).
+		
+		
+		// Calculate average delta
+		
+		// Set index to previous data point (one before current)
+		var i = (msPerFrameIndex - 2 + FRAME_AVG_SMOOTH_COUNT) & (FRAME_AVG_SMOOTH_COUNT - 1);
+		if (msPerFrame[i] <= 0) {
+			// No delta since there's only one data point so far
+			
+			targetMs = msPerFrame[0] * 1.5;	// Probably too much, but better more than less (it will be corrected later)
+		}
+		else {
+			var avgDelta = 0.0;
+			var count = 0;
+			
+			var end = (i + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);
+			while (i != end) {
+				if (msPerFrame[i] >= 0) {
+					avgDelta += msPerFrame[i] - msPerFrame[(i + i) & (FRAME_AVG_SMOOTH_COUNT - 1)];
+					++count;
+				}
+				
+				i = (i - 1 + FRAME_AVG_SMOOTH_COUNT) & (FRAME_AVG_SMOOTH_COUNT - 1);
+			}
+			
+			avgDelta /= count;
+			if (avgDelta >= 0) {
+				// Frame-rate increasing
+				// Push until framerate is decreasing to ensure all free CPU cycles are taken
+				targetMs = Math.max(targetMs * 1.08, targetMs + avgDelta * 0.75);
+			}
+			else {
+				// Frame-rate decreasing, take corrective action
+				targetMs += avgDelta * 0.5;		// Note avgDelta is negative here
 			}
 		}
-		targetMs = targetMs / count * 0.95;		// Use 95% of available ms per frame
+		
 		
 		var avgMsPerLine = 0.0;
-		count = 0;
+		var count = 0;
 		for (ms in msPerLine) {
-			if (ms != 0) {
+			if (ms > 0) {
 				avgMsPerLine += ms;
 				++count;
 			}
 		}
-		avgMsPerLine = avgMsPerLine / count;
-		
-		step = Math.ceil(Math.max(targetMs / avgMsPerLine, MIN_PIXELS_PER_FRAME / img.width));
+		if (count != 0) {
+			avgMsPerLine /= count;
+			step = Math.ceil(Math.max(targetMs / avgMsPerLine, MIN_PIXELS_PER_FRAME / img.width));
+		}
+		else {
+			step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
+		}
 	}
 	
 	
@@ -293,12 +356,17 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private inline function _onEnterFrame()
 	{
+		var _end : Int;
+		
 		if (!done) {
+			++frameCount;
+			
 			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 			Memory.select(data);
 			
 			var start = Lib.getTimer();
-			updateMsPerFrame(start - lastFrameEnd);
+			updateMsPerFrame(start - lastFrameStart);
+			lastFrameStart = start;
 			
 			// Queue events instead of dispatching them inline
 			// because during a call to dispatchEvent *other* pending events
@@ -332,7 +400,7 @@ class PNGEncoder2 extends EventDispatcher
 			
 			Memory.select(oldFastMem);
 			
-			lastFrameEnd = Lib.getTimer();
+			
 			
 			for (event in queuedEvents) {
 				dispatcher.dispatchEvent(event);
@@ -351,6 +419,8 @@ class PNGEncoder2 extends EventDispatcher
 			endEncoding(png);
 			
 			queuedEvents.push(new Event(Event.COMPLETE));
+			
+			trace("Frames: " + frameCount);
 		}
 	}
 	

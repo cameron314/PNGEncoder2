@@ -1002,7 +1002,7 @@ class DeflateStream
 			// Sample given bytes to estimate literal weights
 			var len = end - offset;
 			var sampleFrequency;		// Sample every nth byte
-			if (len <= 8096) {
+			if (len <= 16 * 1024) {
 				// Small sample, calculate exactly
 				sampleFrequency = 1;
 			}

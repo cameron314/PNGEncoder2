@@ -23,7 +23,7 @@ class Test extends Sprite
 	
 	public static function main()
 	{
-		Lib.current.addChild(new Test(200, 200));
+		Lib.current.addChild(new Test(600, 600));
 	}
 	
 	
@@ -45,27 +45,42 @@ class Test extends Sprite
 		display.y = 250;
 		addChild(display);
 		
-		PNGEncoder2.level = CompressionLevel.NORMAL;
-		doBenchmark(bmp);
-		
-		
-		/*var that = this;
 		//PNGEncoder2.level = CompressionLevel.NORMAL;
-		var encoder = PNGEncoder2.encodeAsync(bmp);
-		encoder.addEventListener(Event.COMPLETE, function (e) {
-			trace("Async complete");
+		//doBenchmark(bmp);
+		
+		
+		var that = this;
+		PNGEncoder2.level = CompressionLevel.NORMAL;
+		
+		PNGEncoder2.encode(bmp);		// Warm up
+		
+		// Start encoding after first frame (avoids ~400ms delay)
+		var frameCount = 0;
+		addEventListener(Event.ENTER_FRAME, function (e:Event) {
+			++frameCount;
 			
-			var loader = new Loader();
-			loader.loadBytes(encoder.png);
-			that.addChild(loader);
-			
-			that.doubleClickEnabled = true;
-			that.addEventListener(MouseEvent.DOUBLE_CLICK, function (e2) {
-				var fileReference = new FileReference();
-				fileReference.save(encoder.png, "image.png");
-			});
+			if (frameCount == 1) {
+				var startTime = Lib.getTimer();
+				var encoder = PNGEncoder2.encodeAsync(bmp);
+				encoder.addEventListener(Event.COMPLETE, function (e) {
+					trace("Async complete (" + (Lib.getTimer() - startTime) + "ms)");
+					
+					var loader = new Loader();
+					loader.loadBytes(encoder.png);
+					that.addChild(loader);
+					loader.x = MARGIN + bmp.width + 10;
+					loader.y = 250;
+					
+					that.doubleClickEnabled = true;
+					that.addEventListener(MouseEvent.DOUBLE_CLICK, function (e2) {
+						var fileReference = new FileReference();
+						fileReference.save(encoder.png, "image.png");
+					});
+				});
+			}
 		});
-		*/
+		
+		
 		/*
 		PNGEncoder2.level = CompressionLevel.NORMAL;
 		var png = PNGEncoder2.encode(bmp);
