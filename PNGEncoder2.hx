@@ -453,7 +453,7 @@ class PNGEncoder2 extends EventDispatcher
 			
 			queuedEvents.push(new Event(Event.COMPLETE));
 			
-			trace("Async completed over " + frameCount + " frame(s)");
+			//trace("Async completed over " + frameCount + " frame(s)");
 		}
 	}
 	
