@@ -68,6 +68,12 @@ class PNGEncoder2 extends EventDispatcher
 	@:protected public var png(getPng, null) : ByteArray;
 	@:getter(png) private function flGetPng() return getPng()
 	
+	@:protected private inline function getTargetFPS() return __impl.targetFPS
+	@:protected private inline function setTargetFPS(fps : Int) return __impl.targetFPS = fps
+	@:protected public var targetFPS(getTargetFPS, setTargetFPS) : Int;
+	@:getter(targetFPS) private function flGetTargetFPS() return getTargetFPS()
+	@:setter(targetFPS) private function flSetTargetFPS(fps : Int) setTargetFPS(fps)
+	
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
@@ -94,7 +100,6 @@ class PNGEncoder2 extends EventDispatcher
 	 */
 	public static function encodeAsync(image : BitmapData) : PNGEncoder2
 	{
-		PNGEncoder2Impl.level = level;
 		return new PNGEncoder2(image);
 	}
 	
@@ -103,6 +108,7 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		super();
 		
+		PNGEncoder2Impl.level = level;
 		__impl = new PNGEncoder2Impl(image, this);
 	}
 }
@@ -114,7 +120,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
 	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Must be power of 2. Number of frames to calculate averages from
-	private static inline var MIN_PIXELS_PER_FRAME = 16 * 1024;
+	private static inline var MIN_PIXELS_PER_FRAME = 20 * 1024;
 	private static var data : ByteArray;
 	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
 	private static var encoding = false;
@@ -123,6 +129,7 @@ class PNGEncoder2 extends EventDispatcher
 	public static var level : CompressionLevel;
 	
 	public var png : ByteArray;
+	public var targetFPS : Int;
 	
 	private var img : BitmapData;
 	private var dispatcher : IEventDispatcher;
@@ -137,7 +144,6 @@ class PNGEncoder2 extends EventDispatcher
 	private var updates : Int;
 	private var lastFrameStart : Int;
 	private var step : Int;
-	private var targetMs : Float;
 	private var done : Bool;
 	private var timer : Timer;
 	
@@ -231,6 +237,7 @@ class PNGEncoder2 extends EventDispatcher
 		msPerLineIndex = 0;
 		updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
 		updatesPerFrameIndex = 0;
+		targetFPS = 20;
 		
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 		
@@ -301,79 +308,52 @@ class PNGEncoder2 extends EventDispatcher
 		// Data: We have the last FRAME_AVG_SMOOTH_COUNT measurements
 		// of time between frames.
 		
-		// Goal: Maximize the amount of processing we do each frame without
-		// causing the frame rate to dip.
-		// The time between frames should be stable, leading to deltas
-		// near 0. If there are spare CPU cycles between frames, then
-		// processing more data will not cause the frame rate to dip.
-		// We constantly monitor the average change in time-per-frame
-		// from the previous frame to the next. If the delta is positive
-		// (i.e. the FPS is rising), that's good, and we take advantage
-		// and do more processing (to ensure we're using all free CPU
-		// cycles). If the delta is negative, it means we (or someone else)
-		// is doing too much work per frame, and we should cut back on
-		// the work we do per frame (and there's a minimum to ensure that
-		// we at least get *some* work done each frame).
 		
-		
-		// Calculate average delta
-		
-		// Set index to previous data point (one before current)
-		var i = (msPerFrameIndex - 2 + FRAME_AVG_SMOOTH_COUNT) & (FRAME_AVG_SMOOTH_COUNT - 1);
-		if (msPerFrame[i] <= 0) {
-			// No delta since there's only one data point so far
-			
-			targetMs = msPerFrame[0] * 0.75;
-		}
-		else {
-			var avgDelta = 0.0;
-			var count = 0;
-			
-			var end = (i + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);
-			while (i != end) {
-				if (msPerFrame[i] >= 0) {
-					avgDelta += msPerFrame[i] - msPerFrame[(i + i) & (FRAME_AVG_SMOOTH_COUNT - 1)];
-					++count;
-				}
-				
-				i = (i - 1 + FRAME_AVG_SMOOTH_COUNT) & (FRAME_AVG_SMOOTH_COUNT - 1);
-			}
-			
-			avgDelta /= count;
-			if (avgDelta >= 0) {
-				// Frame-rate increasing
-				// Push until framerate is decreasing to ensure all free CPU cycles are taken
-				targetMs = targetMs * 1.15;
-			}
-			else {
-				// Frame-rate decreasing, take corrective action
-				targetMs += avgDelta * 0.5;		// Note avgDelta is negative here
-			}
-		}
-		
-		
-		var avgUpdatesPerFrame = 0.0;
+		var avgMsPerFrame = 0.0;
 		var count = 0;
-		for (ups in updatesPerFrame) {
-			if (ups > 0) {
-				avgUpdatesPerFrame += ups;
+		
+		for (ms in msPerFrame) {
+			if (ms > 0) {
+				avgMsPerFrame += ms;
 				++count;
 			}
 		}
+		
 		if (count != 0) {
-			avgUpdatesPerFrame /= count;
+			avgMsPerFrame /= count;
 			
-			var avgMsPerLine = 0.0;
+			var targetMs = 1000.0 / targetFPS;
+			if (avgMsPerFrame > targetMs * 1.15) {
+				// Too slow, pull back a bit
+				targetMs -= avgMsPerFrame - targetMs;
+			}
+			
+			var avgUpdatesPerFrame = 0.0;
 			count = 0;
-			for (ms in msPerLine) {
-				if (ms > 0) {
-					avgMsPerLine += ms;
+			for (ups in updatesPerFrame) {
+				if (ups > 0) {
+					avgUpdatesPerFrame += ups;
 					++count;
 				}
 			}
 			if (count != 0) {
-				avgMsPerLine /= count;
-				step = Math.ceil(Math.max(targetMs / avgMsPerLine / avgUpdatesPerFrame, MIN_PIXELS_PER_FRAME / img.width));
+				avgUpdatesPerFrame /= count;
+				
+				var avgMsPerLine = 0.0;
+				count = 0;
+				for (ms in msPerLine) {
+					if (ms > 0) {
+						avgMsPerLine += ms;
+						++count;
+					}
+				}
+				if (count != 0) {
+					avgMsPerLine /= count;
+					step = Math.ceil(Math.max(targetMs / avgMsPerLine / avgUpdatesPerFrame, MIN_PIXELS_PER_FRAME / img.width));
+				}
+				else {
+					step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
+				}
 			}
 			else {
 				step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
@@ -472,6 +452,8 @@ class PNGEncoder2 extends EventDispatcher
 			endEncoding(png);
 			
 			queuedEvents.push(new Event(Event.COMPLETE));
+			
+			trace("Async completed over " + frameCount + " frame(s)");
 		}
 	}
 	
