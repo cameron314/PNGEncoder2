@@ -42,6 +42,7 @@ import flash.events.Event;
 import flash.events.EventDispatcher;
 import flash.events.IEventDispatcher;
 import flash.events.ProgressEvent;
+import flash.events.TimerEvent;
 import flash.geom.Rectangle;
 import flash.Lib;
 import flash.Memory;
@@ -49,6 +50,7 @@ import flash.system.ApplicationDomain;
 import flash.system.System;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
+import flash.utils.Timer;
 import flash.Vector;
 import DeflateStream;
 
@@ -130,10 +132,14 @@ class PNGEncoder2 extends EventDispatcher
 	private var msPerFrameIndex : Int;
 	private var msPerLine : Vector<Float>;
 	private var msPerLineIndex : Int;
+	private var updatesPerFrame : Vector<Int>;
+	private var updatesPerFrameIndex : Int;
+	private var updates : Int;
 	private var lastFrameStart : Int;
 	private var step : Int;
 	private var targetMs : Float;
 	private var done : Bool;
+	private var timer : Timer;
 	
 	private var frameCount : Int;
 	
@@ -223,10 +229,15 @@ class PNGEncoder2 extends EventDispatcher
 		msPerFrameIndex = 0;
 		msPerLine = new Vector<Float>(FRAME_AVG_SMOOTH_COUNT, true);
 		msPerLineIndex = 0;
+		updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
+		updatesPerFrameIndex = 0;
 		
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 		
 		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
+		timer = new Timer(1);
+		timer.addEventListener(TimerEvent.TIMER, onTimer);
+		timer.start();
 		
 		if (img.width > 0 && img.height > 0) {
 			// Determine proper step
@@ -243,6 +254,8 @@ class PNGEncoder2 extends EventDispatcher
 			var fps = Lib.current == null || Lib.current.stage == null ? 24 : Lib.current.stage.frameRate;
 			updateMsPerFrame(Std.int(1.0 / fps * 1000));
 			
+			updateUpdatesPerFrame(1);
+			
 			updateStep();
 			
 			currentY = height;
@@ -251,6 +264,8 @@ class PNGEncoder2 extends EventDispatcher
 			// A dimension is 0
 			step = img.height;
 		}
+		
+		updates = 0;
 		
 		Memory.select(oldFastMem);
 	}
@@ -273,6 +288,12 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		msPerFrame[msPerFrameIndex] = ms;
 		msPerFrameIndex = (msPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);		// Cheap modulus
+	}
+	
+	private inline function updateUpdatesPerFrame(updates : Int)
+	{
+		updatesPerFrame[updatesPerFrameIndex] = updates;
+		updatesPerFrameIndex = (updatesPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);
 	}
 	
 	private inline function updateStep()
@@ -302,7 +323,7 @@ class PNGEncoder2 extends EventDispatcher
 		if (msPerFrame[i] <= 0) {
 			// No delta since there's only one data point so far
 			
-			targetMs = msPerFrame[0] * 1.5;	// Probably too much, but better more than less (it will be corrected later)
+			targetMs = msPerFrame[0] * 0.75;
 		}
 		else {
 			var avgDelta = 0.0;
@@ -322,7 +343,7 @@ class PNGEncoder2 extends EventDispatcher
 			if (avgDelta >= 0) {
 				// Frame-rate increasing
 				// Push until framerate is decreasing to ensure all free CPU cycles are taken
-				targetMs = Math.max(targetMs * 1.08, targetMs + avgDelta * 0.75);
+				targetMs = targetMs * 1.15;
 			}
 			else {
 				// Frame-rate decreasing, take corrective action
@@ -331,17 +352,32 @@ class PNGEncoder2 extends EventDispatcher
 		}
 		
 		
-		var avgMsPerLine = 0.0;
+		var avgUpdatesPerFrame = 0.0;
 		var count = 0;
-		for (ms in msPerLine) {
-			if (ms > 0) {
-				avgMsPerLine += ms;
+		for (ups in updatesPerFrame) {
+			if (ups > 0) {
+				avgUpdatesPerFrame += ups;
 				++count;
 			}
 		}
 		if (count != 0) {
-			avgMsPerLine /= count;
-			step = Math.ceil(Math.max(targetMs / avgMsPerLine, MIN_PIXELS_PER_FRAME / img.width));
+			avgUpdatesPerFrame /= count;
+			
+			var avgMsPerLine = 0.0;
+			count = 0;
+			for (ms in msPerLine) {
+				if (ms > 0) {
+					avgMsPerLine += ms;
+					++count;
+				}
+			}
+			if (count != 0) {
+				avgMsPerLine /= count;
+				step = Math.ceil(Math.max(targetMs / avgMsPerLine / avgUpdatesPerFrame, MIN_PIXELS_PER_FRAME / img.width));
+			}
+			else {
+				step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
+			}
 		}
 		else {
 			step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
@@ -351,22 +387,39 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private function onEnterFrame(e : Event)
 	{
-		_onEnterFrame();
+		updateFrameInfo();
 	}
 	
-	private inline function _onEnterFrame()
+	private function onTimer(e : TimerEvent)
 	{
-		var _end : Int;
-		
+		update();
+	}
+	
+	
+	private inline function updateFrameInfo()
+	{
 		if (!done) {
 			++frameCount;
 			
+			var now = Lib.getTimer();
+			updateMsPerFrame(now - lastFrameStart);
+			lastFrameStart = now;
+			
+			updateUpdatesPerFrame(updates);
+			updates = 0;
+		}
+	}
+	
+	
+	private inline function update()
+	{
+		if (!done) {
+			var start = Lib.getTimer();
+			
+			++updates;
+			
 			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 			Memory.select(data);
-			
-			var start = Lib.getTimer();
-			updateMsPerFrame(start - lastFrameStart);
-			lastFrameStart = start;
 			
 			// Queue events instead of dispatching them inline
 			// because during a call to dispatchEvent *other* pending events
@@ -415,6 +468,8 @@ class PNGEncoder2 extends EventDispatcher
 			done = true;
 			
 			sprite.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
+			timer.removeEventListener(TimerEvent.TIMER, onTimer);
+			timer.stop();
 			
 			endEncoding(png);
 			

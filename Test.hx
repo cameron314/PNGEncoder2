@@ -1,4 +1,5 @@
 package;
+import com.remixtechnology.SWFProfiler;
 import flash.Boot;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
@@ -30,6 +31,9 @@ class Test extends Sprite
 	public function new(?width : Int, ?height : Int)
 	{
 		super();
+		
+		//SWFProfiler.init();
+		//SWFProfiler.show();
 		
 		DeflateStreamTests.run();
 		trace("Tests passed\n");
