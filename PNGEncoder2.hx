@@ -453,8 +453,6 @@ class PNGEncoder2 extends EventDispatcher
 			
 			Memory.select(oldFastMem);
 			
-			
-			
 			for (event in queuedEvents) {
 				dispatcher.dispatchEvent(event);
 			}
@@ -474,8 +472,6 @@ class PNGEncoder2 extends EventDispatcher
 			endEncoding(png);
 			
 			queuedEvents.push(new Event(Event.COMPLETE));
-			
-			trace("Frames: " + frameCount);
 		}
 	}
 	
