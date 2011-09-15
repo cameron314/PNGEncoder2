@@ -24,7 +24,7 @@ class Test extends Sprite
 	
 	public static function main()
 	{
-		Lib.current.addChild(new Test(600, 600));
+		Lib.current.addChild(new Test(200, 200));
 	}
 	
 	
@@ -49,10 +49,10 @@ class Test extends Sprite
 		display.y = 250;
 		addChild(display);
 		
-		//PNGEncoder2.level = CompressionLevel.NORMAL;
-		//doBenchmark(bmp);
+		PNGEncoder2.level = CompressionLevel.NORMAL;
+		doBenchmark(bmp);
 		
-		
+		/*
 		var that = this;
 		PNGEncoder2.level = CompressionLevel.NORMAL;
 		
@@ -83,7 +83,7 @@ class Test extends Sprite
 				});
 			}
 		});
-		
+		*/
 		
 		/*
 		PNGEncoder2.level = CompressionLevel.NORMAL;

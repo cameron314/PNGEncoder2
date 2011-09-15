@@ -466,6 +466,7 @@ class DeflateStream
 	{
 		var cappedEnd, safeEnd;
 		
+		var symbol;
 		var length;
 		var lengthInfo;
 		var distance;
@@ -476,7 +477,17 @@ class DeflateStream
 		// blockInProgress should always be false here
 		
 		
+		// Instead of writing symbols directly to output stream, write them
+		// to a temporary buffer instead. This lets us compute exact symbol
+		// likelihood statistics for creating the Huffman trees, which are
+		// then used to encode the buffer into the final output stream.
+		// Symbols in the temporary buffer are all two-bytes, and can be literals
+		// or lengths. Lengths are represented by 512 + the actual length value.
+		// Lengths are immediately followed by a two-byte distance (actual value).
+		
 		var hashAddr = currentAddr + _maxOutputBufferSize(end - offset) - HASH_SIZE * 4;
+		var bufferAddr = hashAddr - OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
+		var currentBufferAddr;
 		
 		// Initialize hash table to invalid data (HASH_SIZE is divisble by 8)
 		i = hashAddr + HASH_SIZE * 4 - 32;
@@ -497,10 +508,16 @@ class DeflateStream
 			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
 			safeEnd = cappedEnd - 4;		// Can read up to 4 ahead without worrying
 			
-			beginBlock();
-			createAndWriteHuffmanTrees(offset, cappedEnd);
+			
+			// Phase 1: Use LZ77 compression to determine literals, lengths, and distances to
+			// later be encoded. Put these in a temporary output buffer, and track the frequency
+			// of each symbol
+			
+			clearSymbolFrequencies();
+			currentBufferAddr = bufferAddr;
 			
 			i = offset;
+			
 			while (i < safeEnd) {
 				hashOffset = hash(i);
 				j = Memory.getI32(hashAddr + hashOffset);
@@ -520,13 +537,13 @@ class DeflateStream
 					
 					distance = i - (j - length);
 					if (distance <= WINDOW_SIZE) {
-						lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2));
-						writeSymbol(lengthInfo >>> 16);
-						writeBits(length - (lengthInfo & 0x1FFF), (lengthInfo & 0xFF00) >>> 13);
+						incSymbolFrequency(Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2)) >>> 16);
 						
 						distanceInfo = getDistanceInfo(distance);
-						writeSymbol(distanceInfo >>> 24, DISTANCE_OFFSET);
-						writeBits(distance - (distanceInfo & 0xFFFF), (distanceInfo & 0xFF0000) >>> 16);
+						incSymbolFrequency(distanceInfo >>> 24, DISTANCE_OFFSET);
+						
+						Memory.setI32(currentBufferAddr, (length | 512) | (distance << 16));
+						currentBufferAddr += 4;
 						
 						i += length;
 						
@@ -536,29 +553,111 @@ class DeflateStream
 						}
 					}
 					else {
-						writeSymbol(Memory.getByte(i));
+						symbol = Memory.getByte(i);
+						Memory.setI16(currentBufferAddr, symbol);
+						incSymbolFrequency(symbol);
+						
+						currentBufferAddr += 2;
 						++i;
 					}
 				}
 				else {
 					// No luck with hash table. Output literal:
-					writeSymbol(Memory.getByte(i));
+					symbol = Memory.getByte(i);
+					Memory.setI16(currentBufferAddr, symbol);
+					incSymbolFrequency(symbol);
 					
 					Memory.setI32(hashAddr + hashOffset, i);
 					
+					currentBufferAddr += 2;
 					++i;
 				}
 			}
 			
 			while (i < cappedEnd) {
-				writeSymbol(Memory.getByte(i));
+				symbol = Memory.getByte(i);
+				Memory.setI16(currentBufferAddr, symbol);
+				incSymbolFrequency(symbol);
+				currentBufferAddr += 2;
 				++i;
+			}
+			
+			
+			// Phase 2: Encode buffered data to output stream
+			
+			beginBlock();
+			createAndWriteHuffmanTrees(offset, cappedEnd);
+			
+			i = bufferAddr;
+			while (i + 64 <= currentBufferAddr) {	// Up to 16 length/distance pairs, or 32 literals
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+			}
+			while (i < currentBufferAddr) {
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
 			}
 			
 			endBlock();
 			
+			
 			offset = cappedEnd;
 		}
+	}
+	
+	
+	private inline function writeTemporaryBufferSymbol(i : Int) : Int
+	{
+		var length, distance, lengthInfo, distanceInfo;
+		var symbol = Memory.getUI16(i);
+		if ((symbol & 512) != 0) {
+			// Length/distance pair
+			length = symbol ^ 512;
+			lengthInfo = Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2));
+			writeSymbol(lengthInfo >>> 16);
+			writeBits(length - (lengthInfo & 0x1FFF), (lengthInfo & 0xFF00) >>> 13);
+			
+			distance = Memory.getUI16(i + 2);
+			distanceInfo = getDistanceInfo(distance);
+			writeSymbol(distanceInfo >>> 24, DISTANCE_OFFSET);
+			writeBits(distance - (distanceInfo & 0xFFFF), (distanceInfo & 0xFF0000) >>> 16);
+		}
+		else {
+			// Literal
+			writeSymbol(symbol);
+		}
+		
+		return symbol;
 	}
 	
 	
@@ -685,7 +784,7 @@ class DeflateStream
 			}
 			else {
 				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
-				extraScratch = HASH_SIZE * 4;
+				extraScratch = HASH_SIZE * 4 + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
 			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
@@ -1059,17 +1158,21 @@ class DeflateStream
 			}
 		}
 		else if (level == NORMAL) {
-			// Assume lengths are very common (especially short ones)
+			n = 257;		// Must include all symbols up to EOB
 			
-			n = 286;
-			for (symbol in 0 ... 256) {
-				Memory.setI32(scratchAddr + symbol * 4, 2);
+			// Find last non-zero weight (all symbols up to that point will have to be included)
+			for (symbol in 257 ... 286) {
+				if (Memory.getI32(scratchAddr + symbol * 4) > 0) {
+					n = symbol + 1;
+				}
 			}
 			
+			// Weight EOB lowest
 			Memory.setI32(scratchAddr + EOB * 4, 1);
 			
-			for (symbol in 257 ... n) {
-				Memory.setI32(scratchAddr + symbol * 4, n - symbol + 3);
+			// Make sure all weights up to the last one are weighted >= 2
+			for (symbol in 0 ... n) {
+				Memory.setI32(scratchAddr + symbol * 4, Memory.getI32(scratchAddr + symbol * 4) + 2);
 			}
 		}
 		
@@ -1080,15 +1183,36 @@ class DeflateStream
 	}
 	
 	
+	// Resets all symbol frequencies (literal, EOB, length, distance) to 0
+	private inline function clearSymbolFrequencies()
+	{
+		for (symbol in 0 ... 286) {
+			Memory.setI32(scratchAddr + (symbol << 2), 0);
+		}
+		for (symbol in 0 ... 30) {
+			Memory.setI32(scratchAddr + DISTANCE_OFFSET + (symbol << 2), 0);
+		}
+	}
+	
+	
+	private inline function incSymbolFrequency(symbol : Int, scratchOffset = 0)
+	{
+		var addr = scratchAddr + scratchOffset + (symbol << 2);
+		Memory.setI32(addr, Memory.getI32(addr) + 1);
+	}
+	
+	
 	private inline function createDistanceTree(offset : Int, end : Int)
 	{
 		var scratchOffset = scratchAddr + DISTANCE_OFFSET;
 		var n = 0;
 		
 		if (level == NORMAL) {
-			n = 30;
-			for (i in 0 ... n) {
-				Memory.setI32(scratchOffset + i * 4, n - i);
+			// Find last non-zero weight (all symbols up to that point will have to be included)
+			for (symbol in 0 ... 30) {
+				if (Memory.getI32(scratchOffset + symbol * 4) > 0) {
+					n = symbol + 1;
+				}
 			}
 		}
 		
