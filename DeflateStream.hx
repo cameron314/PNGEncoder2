@@ -522,10 +522,10 @@ class DeflateStream
 				hashOffset = hash(i);
 				j = Memory.getI32(hashAddr + hashOffset);
 				
-				if (j >= 0 && (Memory.getI32(j) & 0xFFFFFF) == (Memory.getI32(i) & 0xFFFFFF)) {
-					length = 3;
-					j += 3;
-					k = i + 3;
+				if (j >= 0 && Memory.getI32(j) == Memory.getI32(i)) {
+					length = 4;
+					j += 4;
+					k = i + 4;
 					while (k < cappedEnd && Memory.getByte(j) == Memory.getByte(k) && length < MAX_LENGTH) {
 						++j;
 						++k;
@@ -536,7 +536,7 @@ class DeflateStream
 					Memory.setI32(hashAddr + hashOffset, i);
 					
 					distance = i - (j - length);
-					if (length >= 5 && distance <= WINDOW_SIZE) {
+					if (distance <= WINDOW_SIZE) {
 						incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
 						
 						distanceInfo = getDistanceInfo(distance);
