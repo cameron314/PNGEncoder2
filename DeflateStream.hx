@@ -536,7 +536,7 @@ class DeflateStream
 					Memory.setI32(hashAddr + hashOffset, i);
 					
 					distance = i - (j - length);
-					if (distance <= WINDOW_SIZE) {
+					if (length >= 5 && distance <= WINDOW_SIZE) {
 						incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
 						
 						distanceInfo = getDistanceInfo(distance);
