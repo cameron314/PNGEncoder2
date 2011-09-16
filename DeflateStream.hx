@@ -665,49 +665,14 @@ class DeflateStream
 	// starting at addr
 	private inline function hash(addr : Int)
 	{
-		
-		// Borrowed from FastLZ: http://fastlz.googlecode.com/svn/trunk/fastlz.c
-		/*var index = Memory.getByte(addr) | (Memory.getByte(addr + 1) << 8);
-		index ^=
-			(Memory.getByte(addr + 1) | (Memory.getByte(addr + 2) << 8)) ^
-			(index >>> (16 - HASH_SIZE_BITS))
-		;
-		*/
-		
-		
-		/*
-		// Jenkins hash function
-		var index = Memory.getByte(addr);
-        index += (index << 10);
-        index ^= (index >> 6);
-		index += Memory.getByte(addr + 1);
-        index += (index << 10);
-        index ^= (index >> 6);
-		index += Memory.getByte(addr + 2);
-        index += (index << 10);
-        index ^= (index >> 6);
-		
-		index += (index << 3);
-		index ^= (index >> 11);
-		index += (index << 15);
-		*/
-		
-		
-		//var index = ((Memory.getByte(addr) ^ Memory.getByte(addr + 1)) << (HASH_SIZE_BITS - 8)) ^ Memory.getByte(addr + 2);
-		
-		//var index = Memory.getUI16(addr) ^ Memory.getByte(addr + 2);
-		
-		
-		
-		// Murmur hash 3
+		// MurmurHash3
 		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
 		
-		var h1 = 0x2e352bcd;		// Seed
+		var h1 = 0x2e352bcd;		// Seed (randomly chosen number in this case)
 		var c1 = 0xcc9e2d51;
 		var c2 = 0x1b873593;
 		
-		var k1 = Memory.getUI16(addr + 1) << 8;
-		k1 ^= Memory.getByte(addr);
+		var k1 = (Memory.getUI16(addr + 1) << 8) | Memory.getByte(addr);
         k1 *= c1;
 		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// ROTL32(k1, 15)
 		k1 *= c2;
