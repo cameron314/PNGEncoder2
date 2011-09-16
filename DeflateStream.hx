@@ -537,7 +537,7 @@ class DeflateStream
 					
 					distance = i - (j - length);
 					if (distance <= WINDOW_SIZE) {
-						incSymbolFrequency(Memory.getI32(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2)) >>> 16);
+						incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
 						
 						distanceInfo = getDistanceInfo(distance);
 						incSymbolFrequency(distanceInfo >>> 24, DISTANCE_OFFSET);
@@ -665,15 +665,64 @@ class DeflateStream
 	// starting at addr
 	private inline function hash(addr : Int)
 	{
+		
 		// Borrowed from FastLZ: http://fastlz.googlecode.com/svn/trunk/fastlz.c
-		var index = Memory.getByte(addr) | (Memory.getByte(addr + 1) << 8);
+		/*var index = Memory.getByte(addr) | (Memory.getByte(addr + 1) << 8);
 		index ^=
 			(Memory.getByte(addr + 1) | (Memory.getByte(addr + 2) << 8)) ^
 			(index >>> (16 - HASH_SIZE_BITS))
 		;
+		*/
 		
-		index &= HASH_MASK;
-		return index << 2;		// Multiply by 4 since each entry is 4 bytes
+		
+		/*
+		// Jenkins hash function
+		var index = Memory.getByte(addr);
+        index += (index << 10);
+        index ^= (index >> 6);
+		index += Memory.getByte(addr + 1);
+        index += (index << 10);
+        index ^= (index >> 6);
+		index += Memory.getByte(addr + 2);
+        index += (index << 10);
+        index ^= (index >> 6);
+		
+		index += (index << 3);
+		index ^= (index >> 11);
+		index += (index << 15);
+		*/
+		
+		
+		//var index = ((Memory.getByte(addr) ^ Memory.getByte(addr + 1)) << (HASH_SIZE_BITS - 8)) ^ Memory.getByte(addr + 2);
+		
+		//var index = Memory.getUI16(addr) ^ Memory.getByte(addr + 2);
+		
+		
+		
+		// Murmur hash 3
+		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+		
+		var h1 = 0x2e352bcd;		// Seed
+		var c1 = 0xcc9e2d51;
+		var c2 = 0x1b873593;
+		
+		var k1 = Memory.getUI16(addr + 1) << 8;
+		k1 ^= Memory.getByte(addr);
+        k1 *= c1;
+		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// ROTL32(k1, 15)
+		k1 *= c2;
+		h1 ^= k1;
+		h1 ^= 3;
+		
+		// fmix
+		h1 ^= h1 >>> 16;
+		h1 *= 0x85ebca6b;
+		h1 ^= h1 >>> 13;
+		h1 *= 0xc2b2ae35;
+		h1 ^= h1 >>> 16;
+		
+		h1 &= HASH_MASK;
+		return h1 << 2;		// Multiply by 4 since each entry is 4 bytes
 	}
 	
 	
@@ -1170,9 +1219,11 @@ class DeflateStream
 			// Weight EOB lowest
 			Memory.setI32(scratchAddr + EOB * 4, 1);
 			
-			// Make sure all weights up to the last one are weighted >= 2
+			// Make sure all used symbols are weighted >= 2
 			for (symbol in 0 ... n) {
-				Memory.setI32(scratchAddr + symbol * 4, Memory.getI32(scratchAddr + symbol * 4) + 2);
+				if (symbol != EOB && Memory.getI32(scratchAddr + symbol * 4) > 0) {
+					Memory.setI32(scratchAddr + symbol * 4, Memory.getI32(scratchAddr + symbol * 4) + 2);
+				}
 			}
 		}
 		
@@ -1313,7 +1364,8 @@ private class HuffmanTree
 	
 	private static inline function _weightedAlphabetToCodes(offset, end, maxCodeLength)
 	{
-		var n = (end - offset) >> 2;		// Number of weights
+		var originalN = (end - offset) >> 2;		// Number of weights
+		var n = originalN;		// Number of non-zero weights (actual symbols)
 		
 		if (n > 0) {
 			// There's at least one weight
@@ -1326,6 +1378,20 @@ private class HuffmanTree
 			for (i in 0 ... n) {
 				set32(scratchAddr, i, i);
 			}
+			
+			// Compact arrays by removing elements that have weight of 0 (unused)
+			var jump = 0;
+			for (i in 0 ... n) {
+				if (get32(offset, i) == 0) {
+					++jump;
+				}
+				else {
+					set32(offset,      i - jump, get32(offset,      i));
+					set32(scratchAddr, i - jump, get32(scratchAddr, i));
+				}
+			}
+			n -= jump;
+			end = offset + (n << 2);
 			
 			sortByWeightNonDecreasing(offset, end);
 		}
@@ -1351,7 +1417,13 @@ private class HuffmanTree
 		// Calculate the actual codes (canonical Huffman tree).
 		// Result is stored in lookup table (by symbol)
 		
-		
+		if (n != originalN) {
+			// Set all symbols to code length 0. Used
+			// symbols will be overwritten in next step
+			for (i in 0 ... originalN) {
+				set32(offset, i, 0);
+			}
+		}
 		
 		calculateCanonicalCodes(scratchAddr, n, offset);
 		
