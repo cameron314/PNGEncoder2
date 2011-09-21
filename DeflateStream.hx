@@ -119,9 +119,9 @@ class DeflateStream
 	private static inline var DIST_EXTRA_BITS_OFFSET : Int = LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4;
 	// Next offset: DIST_EXTRA_BITS_OFFSET + 512 * 4
 	
-	private static inline var OUTPUT_BYTES_BEFORE_NEW_BLOCK : Int = 48 * 1024;	// Only used with FAST
+	private static inline var OUTPUT_BYTES_BEFORE_NEW_BLOCK : Int = 48 * 1024;
 	private static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
-	private static inline var ADDLER_MAX : Int = 65521;		// Largest prime smaller than 65536
+	private static inline var ADLER_MAX : Int = 65521;		// Largest prime smaller than 65536
 	private static inline var MAX_CODE_LENGTH : Int = 15;
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
 	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
@@ -1035,8 +1035,8 @@ class DeflateStream
 			// NMAX is evenly divisible by 16
 			do16Adler(offset, offset + NMAX);
 			
-			s1 %= ADDLER_MAX;
-			s2 %= ADDLER_MAX;
+			s1 %= ADLER_MAX;
+			s2 %= ADLER_MAX;
 			
 			offset += NMAX;
 		}
@@ -1047,8 +1047,8 @@ class DeflateStream
 				s2 += s1;
 			}
 			
-			s1 %= ADDLER_MAX;
-			s2 %= ADDLER_MAX;
+			s1 %= ADLER_MAX;
+			s2 %= ADLER_MAX;
 		}
 	}
 	
