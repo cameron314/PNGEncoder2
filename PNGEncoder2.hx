@@ -671,7 +671,7 @@ class PNGEncoder2 extends EventDispatcher
 						
 						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
 						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
-						Memory.setByte(addr + 33, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
+						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
 						
 						addr += 24;
 						scratchAddr += 32;

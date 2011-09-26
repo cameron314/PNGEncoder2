@@ -107,15 +107,53 @@ class Test extends Sprite
 		var data2 = PNGEncoder2.encode(bmp);
 		
 		var loader = new Loader();
-		loader.addEventListener(IOErrorEvent.IO_ERROR, function (e) {
+		/*loader.addEventListener(IOErrorEvent.IO_ERROR, function (e) {
 			trace("Error reading PNG that was compressed with optimized encoder\n");
-		});
+		});*/
 		
+		var that = this;
 		doubleClickEnabled = true;
 		addEventListener(MouseEvent.DOUBLE_CLICK, function (e) {
 			var fileReference = new FileReference();
 			fileReference.save(data2, "test_png.png");
+			/*
+			var fileReference = new FileReference();
+			fileReference.addEventListener(Event.SELECT, function (e2) {
+				fileReference.load();
+			});
+			
+			fileReference.addEventListener(Event.COMPLETE, function (e2) {
+				var loader = new Loader();
+				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function (e3) {
+					var bmp = new BitmapData(Std.int(loader.width), Std.int(loader.height), false, 0x00FFFFFF);
+					bmp.draw(loader);
+					
+					var encoder = PNGEncoder2.encodeAsync(bmp);
+					var startTime = Lib.getTimer();
+					encoder.addEventListener(Event.COMPLETE, function (e) {
+						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms)");
+						
+						var loader = new Loader();
+						loader.loadBytes(encoder.png);
+						that.addChild(loader);
+						loader.x = 250;
+						loader.y = 250;
+						
+						that.doubleClickEnabled = true;
+						that.addEventListener(MouseEvent.DOUBLE_CLICK, function (e2) {
+							var fileReference = new FileReference();
+							fileReference.save(encoder.png, "image.png");
+						});
+					});
+				});
+				
+				loader.loadBytes(fileReference.data);
+			});
+			
+			fileReference.browse();
+			*/
 		});
+		
 		
 		loader.loadBytes(data2);
 		loader.x = MARGIN + bmp.width + 10;
