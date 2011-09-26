@@ -47,13 +47,16 @@ project.
 To link the SWC into a project made with
 the Flash CS5.5 IDE, the steps are as follows:
 
-1. In the File menu, select "ActionScript Settings".
+1. In the File menu, select "ActionScript Settings...".
 2. Under the "Library Path" tab, click the little red
-icon with the "f" logo on it. The tooltip of the button\
+icon with the "f" logo on it. The tooltip of the button
 reads: "Browse to SWC file"
 3. Browse to wherever it was that you saved the SWC, and
 select it
 4. Press OK!
+
+To link the SWC in other versions of the Flash IDE, follow
+[this guide][http://www.myflashlab.com/2010/01/17/how-to-use-swc/] instead.
 
 
 HaXe
