@@ -1,0 +1,66 @@
+Usage
+=====
+PNGEncoder2 supports both synchronous (fast but freezes the UI)
+and asynchronous PNG encoding (a little slower, but can maintain
+a target FPS).
+
+Synchronous example:
+
+    var bmp : BitmapData = ...;		// The bitmap you want to encode
+    var png : ByteArray;
+	
+	PNGEncoder2.level = CompressionLevel.NORMAL;	// Optional. Defaults to FAST
+	
+	png = PNGEncoder2.encode(bmp);
+	
+	
+Asynchronous example:
+
+	var bmp : BitmapData = ...;		// The bitmap you want to encode
+	
+	PNGEncoder2.level = CompressionLevel.NORMAL;	// Optional. Defaults to FAST
+	
+	var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp);
+	encoder.targetFPS = 12;		// Optional. Defaults to 20. Lower FPSs yield faster compression
+	
+	// Because the encoder is guaranteed to fire the COMPLETE event
+	// after at least one frame, it's safe to attach the listener after
+	// starting the encoding (as long as it's done before the next frame)
+	encoder.addEventListener(Event.COMPLETE, function (e) {
+		var png : ByteArray = encoder.png;
+	});
+	
+	// encoder also dispatches ProgressEvent.PROGRESS events if you
+	// want to be notified of progress
+
+
+
+Installation
+============
+
+ActionScript 3
+--------------
+If you're using ActionScript 3 you can simply
+[download the SWC][swc] file and link it to your
+project.
+
+To link the SWC into a project made with
+the Flash CS5.5 IDE, the steps are as follows:
+
+1. In the File menu, select "ActionScript Settings".
+2. Under the "Library Path" tab, click the little red
+icon with the "f" logo on it. The tooltip of the button\
+reads: "Browse to SWC file"
+3. Browse to wherever it was that you saved the SWC, and
+select it
+4. Press OK!
+
+
+HaXe
+----
+If you're using HaXe, it's much simpler to use the source
+directly than to fiddle with SWCs. All you need is the
+"PNGEncoder2.hx" and "DeflateStream.hx" files.
+
+
+[swc]: null
