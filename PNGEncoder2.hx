@@ -125,7 +125,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
 	private static var encoding = false;
 	
-	// FAST compression level is recommended (and default)
+	// NORMAL compression level is default
 	public static var level : CompressionLevel;
 	
 	public var png : ByteArray;
@@ -178,7 +178,7 @@ class PNGEncoder2 extends EventDispatcher
 		
 		
 		if (level == null) {
-			level = FAST;
+			level = NORMAL;
 		}
 		
 		// Data will be select()ed for use with fast memory

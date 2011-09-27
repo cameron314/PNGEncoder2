@@ -49,12 +49,12 @@ class Test extends Sprite
 		display.y = 250;
 		addChild(display);
 		
-		PNGEncoder2.level = CompressionLevel.NORMAL;
+		//PNGEncoder2.level = CompressionLevel.FAST;
 		doBenchmark(bmp);
 		
 		/*
 		var that = this;
-		PNGEncoder2.level = CompressionLevel.NORMAL;
+		//PNGEncoder2.level = CompressionLevel.FAST;
 		
 		PNGEncoder2.encode(bmp);		// Warm up
 		
@@ -86,7 +86,7 @@ class Test extends Sprite
 		*/
 		
 		/*
-		PNGEncoder2.level = CompressionLevel.NORMAL;
+		//PNGEncoder2.level = CompressionLevel.FAST;
 		var png = PNGEncoder2.encode(bmp);
 		trace("Sync complete");
 		var loader = new Loader();

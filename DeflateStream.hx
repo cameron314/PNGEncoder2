@@ -68,6 +68,7 @@ As such, here is the zlib license in its entirety (from zlib.h):
 // - Reverse Parallel algorithm for reversing bits (http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel)
 // - Wikipedia article on canonical Huffman codes (http://en.wikipedia.org/wiki/Canonical_Huffman_code)
 // - http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
+// - MurmurHash3: http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
 
 package;
 

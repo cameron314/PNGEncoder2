@@ -9,7 +9,7 @@ Synchronous example:
     var bmp : BitmapData = ...;		// The bitmap you want to encode
     var png : ByteArray;
 	
-	PNGEncoder2.level = CompressionLevel.NORMAL;	// Optional. Defaults to FAST
+	PNGEncoder2.level = CompressionLevel.NORMAL;	// Optional. Defaults to NORMAL
 	
 	png = PNGEncoder2.encode(bmp);
 	
@@ -18,7 +18,7 @@ Asynchronous example:
 
 	var bmp : BitmapData = ...;		// The bitmap you want to encode
 	
-	PNGEncoder2.level = CompressionLevel.NORMAL;	// Optional. Defaults to FAST
+	PNGEncoder2.level = CompressionLevel.NORMAL;	// Optional. Defaults to NORMAL
 	
 	var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp);
 	encoder.targetFPS = 12;		// Optional. Defaults to 20. Lower FPSs yield faster compression
