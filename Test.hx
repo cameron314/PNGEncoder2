@@ -49,7 +49,7 @@ class Test extends Sprite
 		display.y = 250;
 		addChild(display);
 		
-		//PNGEncoder2.level = CompressionLevel.FAST;
+		PNGEncoder2.level = CompressionLevel.GOOD;
 		doBenchmark(bmp);
 		
 		/*
@@ -114,9 +114,9 @@ class Test extends Sprite
 		var that = this;
 		doubleClickEnabled = true;
 		addEventListener(MouseEvent.DOUBLE_CLICK, function (e) {
-			var fileReference = new FileReference();
-			fileReference.save(data2, "test_png.png");
-			/*
+			/*var fileReference = new FileReference();
+			fileReference.save(data2, "test_png.png");*/
+			
 			var fileReference = new FileReference();
 			fileReference.addEventListener(Event.SELECT, function (e2) {
 				fileReference.load();
@@ -125,13 +125,14 @@ class Test extends Sprite
 			fileReference.addEventListener(Event.COMPLETE, function (e2) {
 				var loader = new Loader();
 				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function (e3) {
-					var bmp = new BitmapData(Std.int(loader.width), Std.int(loader.height), false, 0x00FFFFFF);
+					var bmp = new BitmapData(Std.int(loader.width), Std.int(loader.height), true, 0x00FFFFFF);
 					bmp.draw(loader);
 					
 					var encoder = PNGEncoder2.encodeAsync(bmp);
 					var startTime = Lib.getTimer();
 					encoder.addEventListener(Event.COMPLETE, function (e) {
-						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms)");
+						var percent = 100 - encoder.png.length / (bmp.width * bmp.height * 4) * 100;
+						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
 						var loader = new Loader();
 						loader.loadBytes(encoder.png);
@@ -151,15 +152,15 @@ class Test extends Sprite
 			});
 			
 			fileReference.browse();
-			*/
+			
 		});
 		
-		
+		/*
 		loader.loadBytes(data2);
 		loader.x = MARGIN + bmp.width + 10;
 		loader.y = 250;
 		addChild(loader);
-		
+		*/
 		
 		
 		trace("Encoders yield same bytes: " + compare(data1, data2) + "\n");

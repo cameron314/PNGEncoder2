@@ -84,6 +84,7 @@ enum CompressionLevel {
 	UNCOMPRESSED;		// Fastest
 	FAST;				// Huffman coding only
 	NORMAL;				// Huffman + fast LZ77 compression
+	GOOD;				// Huffman + good LZ77 compression
 }
 
 
@@ -184,7 +185,12 @@ class DeflateStream
 	}
 	
 	
-	private inline function _new(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
+	private function _new(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
+	{
+		fastNew(level, writeZLIBInfo, scratchAddr, startAddr);
+	}
+	
+	private inline function fastNew(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
 	{
 		this.level = level;
 		this.zlib = writeZLIBInfo;
@@ -370,6 +376,9 @@ class DeflateStream
 		else if (level == NORMAL) {
 			_fastWriteNormal(offset, end);
 		}
+		else if (level == GOOD) {
+			_fastWriteGood(offset, end);
+		}
 		else {
 			throw new Error("Compression level not supported");
 		}
@@ -520,7 +529,7 @@ class DeflateStream
 			i = offset;
 			
 			while (i < safeEnd) {
-				hashOffset = hash(i);
+				hashOffset = LZHash.hash(i, HASH_MASK);
 				j = Memory.getI32(hashAddr + hashOffset);
 				
 				if (j >= 0 && Memory.getI32(j) == Memory.getI32(i)) {
@@ -536,7 +545,7 @@ class DeflateStream
 					// Update hash before incrementing
 					Memory.setI32(hashAddr + hashOffset, i);
 					
-					distance = i - (j - length);
+					distance = k - j;
 					if (distance <= WINDOW_SIZE) {
 						incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
 						
@@ -550,7 +559,7 @@ class DeflateStream
 						
 						if (i < safeEnd) {
 							// Update hash after
-							Memory.setI32(hashAddr + hash(i - 1), i - 1);
+							Memory.setI32(hashAddr + LZHash.hash(i - 1, HASH_MASK), i - 1);
 						}
 					}
 					else {
@@ -569,6 +578,132 @@ class DeflateStream
 					incSymbolFrequency(symbol);
 					
 					Memory.setI32(hashAddr + hashOffset, i);
+					
+					currentBufferAddr += 2;
+					++i;
+				}
+			}
+			
+			while (i < cappedEnd) {
+				symbol = Memory.getByte(i);
+				Memory.setI16(currentBufferAddr, symbol);
+				incSymbolFrequency(symbol);
+				currentBufferAddr += 2;
+				++i;
+			}
+			
+			
+			// Phase 2: Encode buffered data to output stream
+			
+			beginBlock();
+			createAndWriteHuffmanTrees(offset, cappedEnd);
+			
+			i = bufferAddr;
+			while (i + 64 <= currentBufferAddr) {	// Up to 16 length/distance pairs, or 32 literals
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+			}
+			while (i < currentBufferAddr) {
+				symbol = writeTemporaryBufferSymbol(i);
+				i += 2 + ((symbol & 512) >>> 8);
+			}
+			
+			endBlock();
+			
+			
+			offset = cappedEnd;
+		}
+	}
+	
+	
+	private inline function _fastWriteGood(offset : Int, end : Int)
+	{
+		var cappedEnd, safeEnd;
+		
+		var symbol;
+		var lengthInfo;
+		var distanceInfo;
+		var hashOffset;
+		var i, j, k;
+		
+		// Works just like _fastWriteNormal, but uses a different hash (LZHash)
+		
+		var hashAddr = currentAddr + _maxOutputBufferSize(end - offset) - LZHash.MEMORY_SIZE;
+		var bufferAddr = hashAddr - OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
+		var currentBufferAddr;
+		
+		var hash = new LZHash(hashAddr, MAX_LENGTH, WINDOW_SIZE);
+		var searchResult;
+		
+		while (end - offset > 0) {
+			// Assume ~50% compression ratio
+			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
+			safeEnd = cappedEnd - LZHash.MAX_LOOKAHEAD;
+			
+			
+			// Phase 1: Use LZ77 compression to determine literals, lengths, and distances to
+			// later be encoded. Put these in a temporary output buffer, and track the frequency
+			// of each symbol
+			
+			clearSymbolFrequencies();
+			currentBufferAddr = bufferAddr;
+			
+			i = offset;
+			
+			while (i < safeEnd) {
+				searchResult = hash.searchAndUpdate(i, cappedEnd);
+				
+				if (searchResult != null) {
+					incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (searchResult.length << 2) + 2));
+					
+					distanceInfo = getDistanceInfo(searchResult.distance);
+					incSymbolFrequency(distanceInfo >>> 24, DISTANCE_OFFSET);
+					
+					Memory.setI32(currentBufferAddr, (searchResult.length | 512) | (searchResult.distance << 16));
+					currentBufferAddr += 4;
+					
+					i += searchResult.length;
+					
+					if (i < safeEnd) {
+						// Update hash after
+						hash.update(i - 1);
+					}
+				}
+				else {
+					// No luck with hash table. Output literal:
+					symbol = Memory.getByte(i);
+					Memory.setI16(currentBufferAddr, symbol);
+					incSymbolFrequency(symbol);
 					
 					currentBufferAddr += 2;
 					++i;
@@ -659,36 +794,6 @@ class DeflateStream
 		}
 		
 		return symbol;
-	}
-	
-	
-	// Returns the index into the hash table for the first few bytes
-	// starting at addr
-	private inline function hash(addr : Int)
-	{
-		// MurmurHash3
-		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
-		
-		var h1 = 0x2e352bcd;		// Seed (randomly chosen number in this case)
-		var c1 = 0xcc9e2d51;
-		var c2 = 0x1b873593;
-		
-		var k1 = (Memory.getUI16(addr + 1) << 8) | Memory.getByte(addr);
-        k1 *= c1;
-		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// ROTL32(k1, 15)
-		k1 *= c2;
-		h1 ^= k1;
-		h1 ^= 3;
-		
-		// fmix
-		h1 ^= h1 >>> 16;
-		h1 *= 0x85ebca6b;
-		h1 ^= h1 >>> 13;
-		h1 *= 0xc2b2ae35;
-		h1 ^= h1 >>> 16;
-		
-		h1 &= HASH_MASK;
-		return h1 << 2;		// Multiply by 4 since each entry is 4 bytes
 	}
 	
 	
@@ -799,7 +904,13 @@ class DeflateStream
 			}
 			else {
 				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
-				extraScratch = HASH_SIZE * 4 + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
+				
+				if (level == NORMAL) {
+					extraScratch = HASH_SIZE * 4 + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
+				}
+				else if (level == GOOD) {
+					extraScratch = LZHash.MEMORY_SIZE + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
+				}
 			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
@@ -849,7 +960,7 @@ class DeflateStream
 	
 	private inline function setupStaticScratchMem()
 	{
-		if (level == NORMAL) {
+		if (level == NORMAL || level == GOOD) {
 			// Write length code, extra bits and lower bound that must be subtracted to
 			// get the extra bits value for all the possible lengths.
 			// This information is stuffed into 4 bytes per length, addressable
@@ -1172,7 +1283,7 @@ class DeflateStream
 				++i;
 			}
 		}
-		else if (level == NORMAL) {
+		else if (level == NORMAL || level == GOOD) {
 			n = 257;		// Must include all symbols up to EOB
 			
 			// Find last non-zero weight (all symbols up to that point will have to be included)
@@ -1224,7 +1335,7 @@ class DeflateStream
 		var scratchOffset = scratchAddr + DISTANCE_OFFSET;
 		var n = 0;
 		
-		if (level == NORMAL) {
+		if (level == NORMAL || level == GOOD) {
 			// Find last non-zero weight (all symbols up to that point will have to be included)
 			for (symbol in 0 ... 30) {
 				if (Memory.getI32(scratchOffset + symbol * 4) > 0) {
@@ -1271,7 +1382,221 @@ class DeflateStream
 }
 
 
-private class HuffmanTree
+@:protected private class LZHash
+{
+	private static inline var HASH_BITS = 15;
+	private static inline var HASH_SIZE = 1 << HASH_BITS;
+	private static inline var HASH_MASK = HASH_SIZE - 1;
+	private static inline var LOG_SLOT = 4;
+	private static inline var SLOTS = 1 << LOG_SLOT;	// For performance, functions have been hardcoded to use 8 slots. Do not change
+	private static inline var SLOT_MASK = SLOTS - 1;
+	
+	public static inline var MEMORY_SIZE = (HASH_SIZE * (SLOTS + 1)) * 4;
+	public static inline var MAX_LOOKAHEAD = 7;
+	
+	private var addr : Int;
+	private var maxMatchLength : Int;
+	private var windowSize : Int;
+	
+	
+	
+	// Memory layout:
+	// HASH_SIZE slot lists
+	// Each slot list is composed of a 16-bit index to the next slot to be written,
+	// followed by a 16-bit count (of filled slots)
+	// followed by SLOTS 4-byte slots containing pointers back to the original
+	// data
+	
+	
+	
+	// Addr must point to an allocated memory region of size MEMORY_SIZE
+	public function new(addr, maxMatchLength, windowSize)
+	{
+		this.addr = addr;
+		this.maxMatchLength = maxMatchLength;
+		this.windowSize = windowSize;
+		
+		clearTable();
+	}
+	
+	
+	private function clearTable()
+	{
+		_clearTable();
+	}
+	
+	private inline function _clearTable()
+	{
+		// Initialize hash table to empty slot lists (HASH_SIZE is divisble by 8)
+		var i = addr;
+		var end = addr + MEMORY_SIZE;
+		while (i < end) {
+			Memory.setI32(i, 0);
+			Memory.setI32(i + 4 * (SLOTS + 1), 0);
+			Memory.setI32(i + 8 * (SLOTS + 1), 0);
+			Memory.setI32(i + 12 * (SLOTS + 1), 0);
+			Memory.setI32(i + 16 * (SLOTS + 1), 0);
+			Memory.setI32(i + 20 * (SLOTS + 1), 0);
+			Memory.setI32(i + 24 * (SLOTS + 1), 0);
+			Memory.setI32(i + 28 * (SLOTS + 1), 0);
+			i += 32 * (SLOTS + 1);
+		}
+	}
+	
+	
+	public inline function searchAndUpdate(i : Int, cap : Int)
+	{
+		var hashOffset = calcHashOffset(i);
+		var result = _search(i, hashOffset, cap);
+		/*if (result != null) {
+			var lookahead1 = search(i + 1, cap);
+			var lookahead2, lookahead3;
+			if (lookahead1 != null && lookahead1.length > result.length + 1 ||
+				(lookahead2 = search(i + 2, cap)) != null && lookahead2.length > result.length + 2 ||
+				(lookahead3 = search(i + 3, cap)) != null && lookahead3.length > result.length + 2) {
+				result = null;		// Defer to better length coming up
+			}
+		}*/
+		
+		_update(i, hashOffset);
+		
+		return result;
+	}
+	
+	
+	private inline function search(i : Int, cap : Int)
+	{
+		return _search(i, calcHashOffset(i), cap);
+	}
+	
+	private inline function _search(i : Int, hashOffset : Int, cap : Int)
+	{
+		var slots = Memory.getUI16(hashOffset);
+		var first3 = Memory.getI32(i) & 0xFFFFFF;
+		
+		/*if (((slots = Memory.getUI16(hashOffset)) >= 1) && (Memory.getI32(Memory.getI32(hashOffset + 4)) & 0xFFFFFF) == (first3 = (Memory.getI32(i) & 0xFFFFFF)) ||
+			slots >= 2 && (Memory.getI32(Memory.getI32(hashOffset + 8)) & 0xFFFFFF) == first3 ||
+			slots >= 3 && (Memory.getI32(Memory.getI32(hashOffset + 12)) & 0xFFFFFF) == first3 ||
+			slots >= 4 && (Memory.getI32(Memory.getI32(hashOffset + 16)) & 0xFFFFFF) == first3 ||
+			slots >= 5 && (Memory.getI32(Memory.getI32(hashOffset + 20)) & 0xFFFFFF) == first3 ||
+			slots >= 6 && (Memory.getI32(Memory.getI32(hashOffset + 24)) & 0xFFFFFF) == first3 ||
+			slots >= 7 && (Memory.getI32(Memory.getI32(hashOffset + 28)) & 0xFFFFFF) == first3 ||
+			slots >= 8 && (Memory.getI32(Memory.getI32(hashOffset + 32)) & 0xFFFFFF) == first3
+		) {*/
+			var length, distance;
+			
+			var longestLength = 0;
+			var longestEndPosition = -1;
+			
+			// Look at all the slots, finding the longest match
+			
+			var j, k;
+			var p = hashOffset + 4;
+			var end = p + (slots << 2);
+			while (p < end) {
+				j = Memory.getI32(p);
+				if ((Memory.getI32(j) & 0xFFFFFF) == first3 && i - j <= windowSize) {
+					// A match! Determine how long it is
+					length = 3;
+					j += 3;
+					k = i + 3;
+					while (k + 4 <= cap && Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
+						length += 4;
+						j += 4;
+						k += 4;
+					}
+					while (k < cap && Memory.getByte(j) == Memory.getByte(k) && length < maxMatchLength) {
+						++length;
+						++j;
+						++k;
+					}
+					
+					// Check if this match is longer than another, or equal with shorter distance
+					if (length > longestLength || (length == longestLength && k - j < i - (longestEndPosition - longestLength))) {
+						longestLength = length;
+						longestEndPosition = j;
+					}
+				}
+				p += 4;
+			}
+			
+			return longestLength >= 4 ? {
+				length: longestLength,
+				distance: i - (longestEndPosition - longestLength)
+			} : null;
+		/*}
+		else {
+			return null;
+		}*/
+	}
+	
+	
+	public inline function update(i : Int)
+	{
+		_update(i, calcHashOffset(i));
+	}
+	
+	
+	private inline function _update(i : Int, hashOffset : Int)
+	{
+		// The slot index wraps around (circular buffer).
+		// This insures the oldest (most likely to be more than
+		// windowSize away) entries are overwritten when the slots
+		// are already full
+		
+		var bookkeeping = Memory.getI32(hashOffset);
+		var nextIndex = bookkeeping >>> 16;
+		var count = bookkeeping & 0xFFFF;
+		
+		Memory.setI32(hashOffset + 4 + (nextIndex << 2), i);
+		
+		// Update bookkeeping
+		++nextIndex;
+		count = (count + 1) ^ (count >>> LOG_SLOT);		// Increment count to ceiling of SLOTS
+		
+		Memory.setI32(hashOffset, ((nextIndex & SLOT_MASK) << 16) | count);
+	}
+	
+	
+	
+	// Returns the index into the hash table for the first 3 bytes
+	// starting at addr
+	public static inline function hash(addr : Int, mask : Int)
+	{
+		// MurmurHash3
+		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+		
+		var h1 = 0x2e352bcd;		// Seed (randomly chosen number in this case)
+		var c1 = 0xcc9e2d51;
+		var c2 = 0x1b873593;
+		
+		var k1 = (Memory.getUI16(addr + 1) << 8) | Memory.getByte(addr);
+        k1 *= c1;
+		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// ROTL32(k1, 15)
+		k1 *= c2;
+		h1 ^= k1;
+		h1 ^= 3;
+		
+		// fmix
+		h1 ^= h1 >>> 16;
+		h1 *= 0x85ebca6b;
+		h1 ^= h1 >>> 13;
+		h1 *= 0xc2b2ae35;
+		h1 ^= h1 >>> 16;
+		
+		h1 &= mask;
+		return h1 << 2;		// Multiply by 4 since each entry is 4 bytes
+	}
+	
+	
+	private inline function calcHashOffset(i : Int)
+	{
+		return addr + hash(i, HASH_MASK) * (SLOTS + 1);
+	}
+}
+
+
+@:protected private class HuffmanTree
 {
 	public static var scratchAddr : Int;
 	
