@@ -651,7 +651,7 @@ class DeflateStream
 		var cappedEnd, safeEnd;
 		
 		var symbol;
-		var lengthInfo;
+		var length, lengthInfo;
 		var distanceInfo;
 		var hashOffset;
 		var i, j, k;
@@ -663,7 +663,6 @@ class DeflateStream
 		var currentBufferAddr;
 		
 		var hash = new LZHash(hashAddr, MAX_LENGTH, WINDOW_SIZE);
-		var searchResult;
 		
 		while (end - offset > 0) {
 			// Assume ~50% compression ratio
@@ -681,23 +680,19 @@ class DeflateStream
 			i = offset;
 			
 			while (i < safeEnd) {
-				searchResult = hash.searchAndUpdate(i, cappedEnd);
+				hash.searchAndUpdate(i, cappedEnd);
 				
-				if (searchResult != null) {
-					incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (searchResult.length << 2) + 2));
+				if (Memory.getI32(hash.resultAddr) != 0) {
+					length = Memory.getUI16(hash.resultAddr);
+					incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
 					
-					distanceInfo = getDistanceInfo(searchResult.distance);
+					distanceInfo = getDistanceInfo(Memory.getUI16(hash.resultAddr + 2));
 					incSymbolFrequency(distanceInfo >>> 24, DISTANCE_OFFSET);
 					
-					Memory.setI32(currentBufferAddr, (searchResult.length | 512) | (searchResult.distance << 16));
+					Memory.setI32(currentBufferAddr, Memory.getI32(hash.resultAddr) | 512);
 					currentBufferAddr += 4;
 					
-					i += searchResult.length;
-					
-					if (i < safeEnd) {
-						// Update hash after
-						hash.update(i - 1);
-					}
+					i += length;
 				}
 				else {
 					// No luck with hash table. Output literal:
@@ -1390,13 +1385,16 @@ class DeflateStream
 	private static inline var LOG_SLOT = 4;
 	private static inline var SLOTS = 1 << LOG_SLOT;	// For performance, functions have been hardcoded to use 8 slots. Do not change
 	private static inline var SLOT_MASK = SLOTS - 1;
+	private static inline var SCRATCH_SIZE = 4;
 	
-	public static inline var MEMORY_SIZE = (HASH_SIZE * (SLOTS + 1)) * 4;
+	public static inline var MEMORY_SIZE = (HASH_SIZE * (SLOTS + 1)) * 4 + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = 7;
 	
 	private var addr : Int;
 	private var maxMatchLength : Int;
 	private var windowSize : Int;
+	
+	public var resultAddr : Int;
 	
 	
 	
@@ -1415,6 +1413,8 @@ class DeflateStream
 		this.addr = addr;
 		this.maxMatchLength = maxMatchLength;
 		this.windowSize = windowSize;
+		
+		resultAddr = addr + MEMORY_SIZE - SCRATCH_SIZE;
 		
 		clearTable();
 	}
@@ -1444,35 +1444,42 @@ class DeflateStream
 	}
 	
 	
+	// Searches the hash for the best match of bytes starting at i, and also updates the hash
+	// for future searches. A 32-bit ((distance << 16) | length) pair is written to memory at
+	// resultAddr, or 0 if no match was found
 	public inline function searchAndUpdate(i : Int, cap : Int)
 	{
 		var hashOffset = calcHashOffset(i);
-		var result = _search(i, hashOffset, cap);
+		_search(i, hashOffset, cap);
 		/*if (result != null) {
 			var lookahead1 = search(i + 1, cap);
-			var lookahead2, lookahead3;
+			var lookahead2, lookahead3, lookahead4;
 			if (lookahead1 != null && lookahead1.length > result.length + 1 ||
 				(lookahead2 = search(i + 2, cap)) != null && lookahead2.length > result.length + 2 ||
-				(lookahead3 = search(i + 3, cap)) != null && lookahead3.length > result.length + 2) {
+				(lookahead3 = search(i + 3, cap)) != null && lookahead3.length > result.length + 2 ||
+				(lookahead4 = search(i + 4, cap)) != null && lookahead4.length > result.length + 3) {
 				result = null;		// Defer to better length coming up
 			}
 		}*/
 		
 		_update(i, hashOffset);
 		
-		return result;
+		if (Memory.getUI16(resultAddr) != 0 && i + Memory.getUI16(resultAddr) < cap) {
+			// Update hash after
+			update(i + Memory.getUI16(resultAddr) - 1);
+		}
 	}
 	
 	
 	private inline function search(i : Int, cap : Int)
 	{
-		return _search(i, calcHashOffset(i), cap);
+		_search(i, calcHashOffset(i), cap);
 	}
 	
 	private inline function _search(i : Int, hashOffset : Int, cap : Int)
 	{
 		var slots = Memory.getUI16(hashOffset);
-		var first3 = Memory.getI32(i) & 0xFFFFFF;
+		var first4 = Memory.getI32(i);
 		
 		/*if (((slots = Memory.getUI16(hashOffset)) >= 1) && (Memory.getI32(Memory.getI32(hashOffset + 4)) & 0xFFFFFF) == (first3 = (Memory.getI32(i) & 0xFFFFFF)) ||
 			slots >= 2 && (Memory.getI32(Memory.getI32(hashOffset + 8)) & 0xFFFFFF) == first3 ||
@@ -1490,16 +1497,24 @@ class DeflateStream
 			
 			// Look at all the slots, finding the longest match
 			
+			// TODO: Improve compression with look-ahead for delayed matching
+			// TODO: Improve compression by adding every byte to hash, not just beginning and end of sequences
+			// TODO: Improve speed by caching lookup results from look-aheads
+			// TODO: Improve speed as much as possible -- profile and tweak to remove extra ifs
+			// TODO: Improve compression by using PAETH filter
+			// TODO: Instead of using brute-force search for hash collisions, use something
+			// more clever (sorted substrings?) to speed up searches
+			
 			var j, k;
 			var p = hashOffset + 4;
 			var end = p + (slots << 2);
 			while (p < end) {
 				j = Memory.getI32(p);
-				if ((Memory.getI32(j) & 0xFFFFFF) == first3 && i - j <= windowSize) {
+				if (Memory.getI32(j) == first4 && i - j <= windowSize) {
 					// A match! Determine how long it is
-					length = 3;
-					j += 3;
-					k = i + 3;
+					length = 4;
+					j += 4;
+					k = i + 4;
 					while (k + 4 <= cap && Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
 						length += 4;
 						j += 4;
@@ -1520,13 +1535,17 @@ class DeflateStream
 				p += 4;
 			}
 			
-			return longestLength >= 4 ? {
-				length: longestLength,
-				distance: i - (longestEndPosition - longestLength)
-			} : null;
+			if (longestLength >= 4) {
+				// length: longestLength,
+				// distance: i - (longestEndPosition - longestLength)
+				Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
+			}
+			else {
+				Memory.setI32(resultAddr, 0);
+			}
 		/*}
 		else {
-			return null;
+			Memory.setI32(resultAddr, 0);
 		}*/
 	}
 	
