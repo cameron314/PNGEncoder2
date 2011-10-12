@@ -1499,9 +1499,12 @@ class DeflateStream
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
 			else if (i + length < cap - MAX_LOOKAHEAD) {
-				// Update hash after
+				// Found match. Update hash with every byte (updates are pretty fast)
+				for (k in i + LOOKAHEADS + 1 ... i + length) {
+					update(k);
+				}
+				
 				i += length;
-				update(i - 1);
 				
 				// Cache will be invalid after jump in i; repopulate
 				resultAddr = nextResultAddr(resultAddr);		// Fill up slots after (and up to) current result slot
@@ -1532,7 +1535,6 @@ class DeflateStream
 			
 			// Look at all the slots, finding the longest match
 			
-			// TODO: Improve compression by adding every byte to hash, not just beginning and end of sequences
 			// TODO: Improve speed by caching lookup results from look-aheads
 			// TODO: Improve speed as much as possible -- profile and tweak to remove extra ifs
 			// TODO: Improve compression by using PAETH filter
