@@ -663,6 +663,12 @@ class DeflateStream
 		var currentBufferAddr;
 		
 		var hash = new LZHash(hashAddr, MAX_LENGTH, WINDOW_SIZE);
+		if (offset < end - LZHash.MAX_LOOKAHEAD) {
+			// Note that if this if is not entered, we cannot call the
+			// searchAndUpdate method, but we won't since the first inner loop
+			// will never be entered
+			hash.initLookahead(offset, end);
+		}
 		
 		while (end - offset > 0) {
 			// Assume ~50% compression ratio
@@ -1383,14 +1389,17 @@ class DeflateStream
 	private static inline var HASH_SIZE = 1 << HASH_BITS;
 	private static inline var HASH_MASK = HASH_SIZE - 1;
 	private static inline var LOG_SLOT = 4;
-	private static inline var SLOTS = 1 << LOG_SLOT;	// For performance, functions have been hardcoded to use 8 slots. Do not change
+	private static inline var SLOTS = 1 << LOG_SLOT;
 	private static inline var SLOT_MASK = SLOTS - 1;
-	private static inline var SCRATCH_SIZE = 4;
+	private static inline var LOOKAHEADS = 3;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
+	private static inline var SCRATCH_SIZE = (LOOKAHEADS + 1) * 4;
+	private static inline var SCRATCH_MASK = SCRATCH_SIZE - 1;
 	
 	public static inline var MEMORY_SIZE = (HASH_SIZE * (SLOTS + 1)) * 4 + SCRATCH_SIZE;
-	public static inline var MAX_LOOKAHEAD = 7;
+	public static inline var MAX_LOOKAHEAD = 4 + LOOKAHEADS;		// Bytes
 	
 	private var addr : Int;
+	private var baseResultAddr : Int;
 	private var maxMatchLength : Int;
 	private var windowSize : Int;
 	
@@ -1414,9 +1423,31 @@ class DeflateStream
 		this.maxMatchLength = maxMatchLength;
 		this.windowSize = windowSize;
 		
-		resultAddr = addr + MEMORY_SIZE - SCRATCH_SIZE;
+		baseResultAddr = resultAddr = addr + MEMORY_SIZE - SCRATCH_SIZE;
 		
 		clearTable();
+	}
+	
+	
+	// Must be called exactly once before doing anything else.
+	// Cap must be > i + MAX_LOOKAHEAD
+	public inline function initLookahead(i : Int, cap : Int)
+	{
+		var hashOffset;
+		
+		for (_ in 0 ... LOOKAHEADS) {
+			hashOffset = calcHashOffset(i);
+			_search(i, hashOffset, cap);
+			_update(i, hashOffset);
+			
+			++i;
+			resultAddr = nextResultAddr(resultAddr);
+		}
+	}
+	
+	private inline function nextResultAddr(resultAddr : Int)
+	{
+		return baseResultAddr + (((resultAddr - baseResultAddr) + 4) & SCRATCH_MASK);
 	}
 	
 	
@@ -1449,32 +1480,36 @@ class DeflateStream
 	// resultAddr, or 0 if no match was found
 	public inline function searchAndUpdate(i : Int, cap : Int)
 	{
-		var hashOffset = calcHashOffset(i);
-		_search(i, hashOffset, cap);
-		/*if (result != null) {
-			var lookahead1 = search(i + 1, cap);
-			var lookahead2, lookahead3, lookahead4;
-			if (lookahead1 != null && lookahead1.length > result.length + 1 ||
-				(lookahead2 = search(i + 2, cap)) != null && lookahead2.length > result.length + 2 ||
-				(lookahead3 = search(i + 3, cap)) != null && lookahead3.length > result.length + 2 ||
-				(lookahead4 = search(i + 4, cap)) != null && lookahead4.length > result.length + 3) {
-				result = null;		// Defer to better length coming up
+		// Calculate next result for lookahead cache
+		var hashOffset = calcHashOffset(i + LOOKAHEADS);
+		_search(i + LOOKAHEADS, hashOffset, cap);
+		_update(i + LOOKAHEADS, hashOffset);
+		
+		
+		// After incrementing, current result (calculated LOOKAHEADS steps ago) will
+		// be at resultAddr
+		resultAddr = nextResultAddr(resultAddr);
+		
+		if (Memory.getUI16(resultAddr) != 0) {
+			var length = Memory.getUI16(resultAddr);
+			if (Memory.getUI16(nextResultAddr(resultAddr)) > length ||
+				Memory.getUI16(nextResultAddr(resultAddr + 4)) > length + 1 ||
+				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2
+			) {
+				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
-		}*/
-		
-		_update(i, hashOffset);
-		
-		if (Memory.getUI16(resultAddr) != 0 && i + Memory.getUI16(resultAddr) < cap) {
-			// Update hash after
-			update(i + Memory.getUI16(resultAddr) - 1);
+			else if (i + length < cap - MAX_LOOKAHEAD) {
+				// Update hash after
+				i += length;
+				update(i - 1);
+				
+				// Cache will be invalid after jump in i; repopulate
+				resultAddr = nextResultAddr(resultAddr);		// Fill up slots after (and up to) current result slot
+				initLookahead(i, cap);
+			}
 		}
 	}
 	
-	
-	private inline function search(i : Int, cap : Int)
-	{
-		_search(i, calcHashOffset(i), cap);
-	}
 	
 	private inline function _search(i : Int, hashOffset : Int, cap : Int)
 	{
@@ -1497,7 +1532,6 @@ class DeflateStream
 			
 			// Look at all the slots, finding the longest match
 			
-			// TODO: Improve compression with look-ahead for delayed matching
 			// TODO: Improve compression by adding every byte to hash, not just beginning and end of sequences
 			// TODO: Improve speed by caching lookup results from look-aheads
 			// TODO: Improve speed as much as possible -- profile and tweak to remove extra ifs
@@ -1510,7 +1544,7 @@ class DeflateStream
 			var end = p + (slots << 2);
 			while (p < end) {
 				j = Memory.getI32(p);
-				if (Memory.getI32(j) == first4 && i - j <= windowSize) {
+				if (Memory.getI32(j) == first4 && j < i && i - j <= windowSize) {
 					// A match! Determine how long it is
 					length = 4;
 					j += 4;
