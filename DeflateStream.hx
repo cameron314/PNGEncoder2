@@ -688,7 +688,7 @@ class DeflateStream
 			while (i < safeEnd) {
 				hash.searchAndUpdate(i, cappedEnd);
 				
-				if (Memory.getI32(hash.resultAddr) != 0) {
+				if (Memory.getUI16(hash.resultAddr) >= LZHash.MIN_MATCH_LENGTH) {
 					length = Memory.getUI16(hash.resultAddr);
 					incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
 					
@@ -1397,6 +1397,8 @@ class DeflateStream
 	
 	public static inline var MEMORY_SIZE = (HASH_SIZE * (SLOTS + 1)) * 4 + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = 4 + LOOKAHEADS;		// Bytes
+	public static inline var MIN_MATCH_LENGTH = 4;
+	
 	
 	private var addr : Int;
 	private var baseResultAddr : Int;
@@ -1477,7 +1479,7 @@ class DeflateStream
 	
 	// Searches the hash for the best match of bytes starting at i, and also updates the hash
 	// for future searches. A 32-bit ((distance << 16) | length) pair is written to memory at
-	// resultAddr, or 0 if no match was found
+	// resultAddr; Length portion will be < MIN_MATCH_LENGTH if no match was found
 	public inline function searchAndUpdate(i : Int, cap : Int)
 	{
 		// Calculate next result for lookahead cache
@@ -1490,7 +1492,7 @@ class DeflateStream
 		// be at resultAddr
 		resultAddr = nextResultAddr(resultAddr);
 		
-		if (Memory.getUI16(resultAddr) != 0) {
+		if (Memory.getUI16(resultAddr) >= MIN_MATCH_LENGTH) {
 			var length = Memory.getUI16(resultAddr);
 			if (Memory.getUI16(nextResultAddr(resultAddr)) > length ||
 				Memory.getUI16(nextResultAddr(resultAddr + 4)) > length + 1 ||
@@ -1519,70 +1521,53 @@ class DeflateStream
 		var slots = Memory.getUI16(hashOffset);
 		var first4 = Memory.getI32(i);
 		
-		/*if (((slots = Memory.getUI16(hashOffset)) >= 1) && (Memory.getI32(Memory.getI32(hashOffset + 4)) & 0xFFFFFF) == (first3 = (Memory.getI32(i) & 0xFFFFFF)) ||
-			slots >= 2 && (Memory.getI32(Memory.getI32(hashOffset + 8)) & 0xFFFFFF) == first3 ||
-			slots >= 3 && (Memory.getI32(Memory.getI32(hashOffset + 12)) & 0xFFFFFF) == first3 ||
-			slots >= 4 && (Memory.getI32(Memory.getI32(hashOffset + 16)) & 0xFFFFFF) == first3 ||
-			slots >= 5 && (Memory.getI32(Memory.getI32(hashOffset + 20)) & 0xFFFFFF) == first3 ||
-			slots >= 6 && (Memory.getI32(Memory.getI32(hashOffset + 24)) & 0xFFFFFF) == first3 ||
-			slots >= 7 && (Memory.getI32(Memory.getI32(hashOffset + 28)) & 0xFFFFFF) == first3 ||
-			slots >= 8 && (Memory.getI32(Memory.getI32(hashOffset + 32)) & 0xFFFFFF) == first3
-		) {*/
-			var length, distance;
-			
-			var longestLength = 0;
-			var longestEndPosition = -1;
-			
-			// Look at all the slots, finding the longest match
-			
-			// TODO: Improve speed by caching lookup results from look-aheads
-			// TODO: Improve speed as much as possible -- profile and tweak to remove extra ifs
-			// TODO: Improve compression by using PAETH filter
-			// TODO: Instead of using brute-force search for hash collisions, use something
-			// more clever (sorted substrings?) to speed up searches
-			
-			var j, k;
-			var p = hashOffset + 4;
-			var end = p + (slots << 2);
-			while (p < end) {
-				j = Memory.getI32(p);
-				if (Memory.getI32(j) == first4 && j < i && i - j <= windowSize) {
-					// A match! Determine how long it is
-					length = 4;
+		
+		var length, distance;
+		
+		var longestLength = 0;
+		var longestEndPosition = -1;
+		
+		// Look at all the slots, finding the longest match
+		
+		// TODO: Improve speed as much as possible -- profile and tweak to remove extra ifs
+		// TODO: Improve compression by using PAETH filter
+		// TODO: Instead of using brute-force search for hash collisions, use something
+		// more clever (sorted substrings?) to speed up searches
+		
+		var j, k;
+		var p = hashOffset + 4;
+		var end = p + (slots << 2);
+		while (p < end) {
+			j = Memory.getI32(p);
+			if (Memory.getI32(j) == first4 && i - j <= windowSize) {
+				// A match! Determine how long it is
+				length = 4;
+				j += 4;
+				k = i + 4;
+				while (k + 4 <= cap && Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
+					length += 4;
 					j += 4;
-					k = i + 4;
-					while (k + 4 <= cap && Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
-						length += 4;
-						j += 4;
-						k += 4;
-					}
-					while (k < cap && Memory.getByte(j) == Memory.getByte(k) && length < maxMatchLength) {
-						++length;
-						++j;
-						++k;
-					}
-					
-					// Check if this match is longer than another, or equal with shorter distance
-					if (length > longestLength || (length == longestLength && k - j < i - (longestEndPosition - longestLength))) {
-						longestLength = length;
-						longestEndPosition = j;
-					}
+					k += 4;
 				}
-				p += 4;
+				
+				while (k < cap && Memory.getByte(j) == Memory.getByte(k) && length < maxMatchLength) {
+					++length;
+					++j;
+					++k;
+				}
+				
+				// Check if this match is longer than another, or equal with shorter distance
+				if (length > longestLength || (length == longestLength && k - j < i - (longestEndPosition - longestLength))) {
+					longestLength = length;
+					longestEndPosition = j;
+				}
 			}
-			
-			if (longestLength >= 4) {
-				// length: longestLength,
-				// distance: i - (longestEndPosition - longestLength)
-				Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
-			}
-			else {
-				Memory.setI32(resultAddr, 0);
-			}
-		/*}
-		else {
-			Memory.setI32(resultAddr, 0);
-		}*/
+			p += 4;
+		}
+		
+		// length: longestLength,
+		// distance: i - (longestEndPosition - longestLength)
+			Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
 	}
 	
 	
