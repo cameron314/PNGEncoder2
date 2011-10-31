@@ -1529,10 +1529,9 @@ class DeflateStream
 		
 		// Look at all the slots, finding the longest match
 		
-		// TODO: Improve speed as much as possible -- profile and tweak to remove extra ifs
+		// TODO: Instead of using brute-force search for hash collisions, use something more clever (sorted substrings?) to speed up searches
+		// TODO: Improve hash spread (and therefore speed) by hashing on first four bytes instead of first three
 		// TODO: Improve compression by using PAETH filter
-		// TODO: Instead of using brute-force search for hash collisions, use something
-		// more clever (sorted substrings?) to speed up searches
 		
 		var j, k;
 		var p = hashOffset + 4;
@@ -1567,7 +1566,7 @@ class DeflateStream
 		
 		// length: longestLength,
 		// distance: i - (longestEndPosition - longestLength)
-			Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
+		Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
 	}
 	
 	
