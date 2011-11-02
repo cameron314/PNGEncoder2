@@ -69,6 +69,7 @@ As such, here is the zlib license in its entirety (from zlib.h):
 // - Wikipedia article on canonical Huffman codes (http://en.wikipedia.org/wiki/Canonical_Huffman_code)
 // - http://cstheory.stackexchange.com/questions/7420/relation-between-code-length-and-symbol-weight-in-a-huffman-code
 // - MurmurHash3: http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+// - Progressive Hashing: http://fastcompression.blogspot.com/2011/10/progressive-hash-series-new-method-to.html
 
 package;
 
@@ -529,7 +530,7 @@ class DeflateStream
 			i = offset;
 			
 			while (i < safeEnd) {
-				hashOffset = LZHash.hash(i, HASH_MASK);
+				hashOffset = LZHash.hash4(i, HASH_MASK) << 2;	// Multiply by 4 since each entry is 4 bytes
 				j = Memory.getI32(hashAddr + hashOffset);
 				
 				if (j >= 0 && Memory.getI32(j) == Memory.getI32(i)) {
@@ -559,7 +560,7 @@ class DeflateStream
 						
 						if (i < safeEnd) {
 							// Update hash after
-							Memory.setI32(hashAddr + LZHash.hash(i - 1, HASH_MASK), i - 1);
+							Memory.setI32(hashAddr + LZHash.hash4(i - 1, HASH_MASK) << 2, i - 1);
 						}
 					}
 					else {
@@ -1388,14 +1389,13 @@ class DeflateStream
 	private static inline var HASH_BITS = 15;
 	private static inline var HASH_SIZE = 1 << HASH_BITS;
 	private static inline var HASH_MASK = HASH_SIZE - 1;
-	private static inline var LOG_SLOT = 4;
-	private static inline var SLOTS = 1 << LOG_SLOT;
-	private static inline var SLOT_MASK = SLOTS - 1;
+	private static inline var MAX_ATTEMPTS = 4;			// Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 3;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
-	private static inline var SCRATCH_SIZE = (LOOKAHEADS + 1) * 4;
-	private static inline var SCRATCH_MASK = SCRATCH_SIZE - 1;
+	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
+	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
+	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE;
 	
-	public static inline var MEMORY_SIZE = (HASH_SIZE * (SLOTS + 1)) * 4 + SCRATCH_SIZE;
+	public static inline var MEMORY_SIZE = (HASH_SIZE * 2) * 4 + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = 4 + LOOKAHEADS;		// Bytes
 	public static inline var MIN_MATCH_LENGTH = 4;
 	
@@ -1410,11 +1410,10 @@ class DeflateStream
 	
 	
 	// Memory layout:
-	// HASH_SIZE slot lists
-	// Each slot list is composed of a 16-bit index to the next slot to be written,
-	// followed by a 16-bit count (of filled slots)
-	// followed by SLOTS 4-byte slots containing pointers back to the original
-	// data
+	// HASH_SIZE slots
+	// Each slot list is composed of a 4-byte count indicating the number of
+	// bytes that hash of the index stored at that location was computed with,
+	// followed by a 4-byte pointer back to the original data (index)
 	
 	
 	
@@ -1438,7 +1437,7 @@ class DeflateStream
 		var hashOffset;
 		
 		for (_ in 0 ... LOOKAHEADS) {
-			hashOffset = calcHashOffset(i);
+			var hashOffset = calcHashOffsets(hash4(i, HASH_MASK));
 			_search(i, hashOffset, cap);
 			_update(i, hashOffset);
 			
@@ -1449,7 +1448,7 @@ class DeflateStream
 	
 	private inline function nextResultAddr(resultAddr : Int)
 	{
-		return baseResultAddr + (((resultAddr - baseResultAddr) + 4) & SCRATCH_MASK);
+		return baseResultAddr + (((resultAddr - baseResultAddr) + 4) & LOOKAHEAD_MASK);
 	}
 	
 	
@@ -1483,7 +1482,7 @@ class DeflateStream
 	public inline function searchAndUpdate(i : Int, cap : Int)
 	{
 		// Calculate next result for lookahead cache
-		var hashOffset = calcHashOffset(i + LOOKAHEADS);
+		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
 		_search(i + LOOKAHEADS, hashOffset, cap);
 		_update(i + LOOKAHEADS, hashOffset);
 		
@@ -1501,7 +1500,7 @@ class DeflateStream
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
 			else if (i + length < cap - MAX_LOOKAHEAD) {
-				// Found match. Update hash with every byte (updates are pretty fast)
+				// Found match. Update hash with every byte
 				for (k in i + LOOKAHEADS + 1 ... i + length) {
 					update(k);
 				}
@@ -1518,7 +1517,7 @@ class DeflateStream
 	
 	private inline function _search(i : Int, hashOffset : Int, cap : Int)
 	{
-		var slots = Memory.getUI16(hashOffset);
+		/*var slots = Memory.getUI16(hashOffset);
 		var first4 = Memory.getI32(i);
 		
 		
@@ -1528,10 +1527,6 @@ class DeflateStream
 		var longestEndPosition = -1;
 		
 		// Look at all the slots, finding the longest match
-		
-		// TODO: Instead of using brute-force search for hash collisions, use something more clever (sorted substrings?) to speed up searches
-		// TODO: Improve hash spread (and therefore speed) by hashing on first four bytes instead of first three
-		// TODO: Improve compression by using PAETH filter
 		
 		var j, k;
 		var p = hashOffset + 4;
@@ -1567,12 +1562,17 @@ class DeflateStream
 		// length: longestLength,
 		// distance: i - (longestEndPosition - longestLength)
 		Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
+		*/
+		
+		
+		
 	}
 	
 	
-	public inline function update(i : Int)
+	
+	private inline function update(i : Int)
 	{
-		_update(i, calcHashOffset(i));
+		_update(i, calcHashOffset(hash4(i, HASH_MASK)));
 	}
 	
 	
@@ -1598,9 +1598,9 @@ class DeflateStream
 	
 	
 	
-	// Returns the index into the hash table for the first 3 bytes
-	// starting at addr
-	public static inline function hash(addr : Int, mask : Int)
+	// Returns the index into a hash table for the first 3 bytes
+	// starting at addr TODO: Change from 3 to 4
+	public static inline function hash4(addr : Int, mask : Int)
 	{
 		// MurmurHash3
 		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
@@ -1616,21 +1616,68 @@ class DeflateStream
 		h1 ^= k1;
 		h1 ^= 3;
 		
-		// fmix
-		h1 ^= h1 >>> 16;
-		h1 *= 0x85ebca6b;
-		h1 ^= h1 >>> 13;
-		h1 *= 0xc2b2ae35;
-		h1 ^= h1 >>> 16;
-		
-		h1 &= mask;
-		return h1 << 2;		// Multiply by 4 since each entry is 4 bytes
+		return murmur_fmix(h1) & mask;
 	}
 	
 	
-	private inline function calcHashOffset(i : Int)
+	public static inline function hash(addr : Int, len : Int, mask : Int)
 	{
-		return addr + hash(i, HASH_MASK) * (SLOTS + 1);
+		// MurmurHash3
+		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+		
+		var h1 = 0x2e352bcd;		// Seed (randomly chosen number in this case)
+		var c1 = 0xcc9e2d51;
+		var c2 = 0x1b873593;
+		
+		var nblocks = len >>> 2;
+		var block_ptr = addr + (nblocks << 2);
+		var k1;
+		
+		// Body
+		var i = -nblocks;
+		while (i != 0) {
+			k1 = Memory.getI32(block_ptr + (i << 2));
+			
+			k1 *= c1;
+			k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
+			k1 *= c2;
+			
+			h1 ^= k1;
+			h1 = (h1 << 13) | (h1 >>> (32 - 13));	// h1 = ROTL32(h1, 13);
+			h1 = h1 * 5 + 0xe6546b64;
+			
+			++i;
+		}
+		
+		// Tail
+		k1 = 0;
+		switch(len & 3) {
+			case 3: k1 ^= Memory.getByte(block_ptr + 2) << 16;
+			case 2: k1 ^= Memory.getByte(block_ptr + 1) << 8;
+			case 1: k1 ^= Memory.getByte(block_ptr);
+					k1 *= c1;
+					k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
+					k1 *= c2;
+					h1 ^= k1;
+		}
+		
+		// Finalization
+		return murmur_fmix(h1 ^ len) & mask;
+	}
+	
+	private static inline function murmur_fmix(h : Int)
+	{	
+		h ^= h >>> 16;
+		h *= 0x85ebca6b;
+		h ^= h >>> 13;
+		h *= 0xc2b2ae35;
+		return h ^ (h >>> 16);
+	}
+	
+	
+	private inline function calcHashOffset(hash : Int)
+	{
+		return addr + ((hash * (SLOTS + 1)) << 2);
 	}
 }
 
