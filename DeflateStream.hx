@@ -1387,18 +1387,19 @@ class DeflateStream
 @:protected private class LZHash
 {
 	private static inline var HASH_BITS = 16;
-	private static inline var HASH_SIZE = 1 << HASH_BITS;
-	private static inline var HASH_MASK = HASH_SIZE - 1;
+	private static inline var HASH_ENTRIES = 1 << HASH_BITS;
+	private static inline var HASH_MASK = HASH_ENTRIES - 1;
 	private static inline var SLOT_SIZE = 1 + 4;
+	private static inline var HASH_SIZE = HASH_ENTRIES * SLOT_SIZE;
 	private static inline var MAX_ATTEMPTS = 6;			// Up to this many entries are displaced during update
-	private static inline var MAX_HASH_DEPTH = 10;		// Up to this many hashes are performed on different lengths of the input string during searches
+	private static inline var MAX_HASH_DEPTH = 9;		// Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 3;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
 	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE;
 	
-	public static inline var MEMORY_SIZE = (HASH_SIZE * 2) * 4 + SCRATCH_SIZE;
-	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + 1 + LOOKAHEADS;		// Bytes
+	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
+	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;		// Bytes
 	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
 	
 	
@@ -1438,6 +1439,7 @@ class DeflateStream
 	{
 		var hashOffset;
 		
+		// TODO: Unroll
 		for (_ in 0 ... LOOKAHEADS) {
 			var hashOffset = calcHashOffset(hash4(i, HASH_MASK));
 			_search(i, hashOffset, cap);
@@ -1461,9 +1463,9 @@ class DeflateStream
 	
 	private inline function _clearTable()
 	{
-		// Initialize hash table and scratch memory (MEMORY_SIZE is divisble by 8)
+		// Initialize hash table (HASH_SIZE is divisble by 8)
 		var i = addr;
-		var end = addr + MEMORY_SIZE;
+		var end = addr + HASH_SIZE;
 		while (i < end) {
 			Memory.setI32(i, -1);
 			Memory.setI32(i + 4, -1);
@@ -1501,7 +1503,7 @@ class DeflateStream
 			) {
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
-			else if (i + length < cap - MAX_LOOKAHEAD) {
+			else if (i + length + MAX_LOOKAHEAD < cap) {
 				// Found match. Update hash with every byte
 				for (k in i + LOOKAHEADS + 1 ... i + length) {
 					update(k);
@@ -1552,13 +1554,13 @@ class DeflateStream
 			longestEndPosition = j;
 		}
 		
-		for (hashDepth in MIN_MATCH_LENGTH + 1 ... MAX_HASH_DEPTH) {
+		for (hashDepth in MIN_MATCH_LENGTH + 1 ... MAX_HASH_DEPTH + 1) {
 			hashOffset = calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1;
 			
 			j = Memory.getI32(hashOffset);
 			
-			// Optimization trick (from Charlie Bloom): check the bytes at longest length instead of at the beginning, since they're more likely to be wrong, and they need to be right to yield a better match
-			if (j >= 0 && Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3) && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+			// Optimization trick (borrowed from Charlie Bloom): check the bytes at longest length, since they're more likely to be wrong, and they need to be right to yield a better match
+			if (j >= 0 /*&& Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3)*/ && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
 				// Find length of match
 				k = i + 4;
 				length = 4;
@@ -1620,7 +1622,6 @@ class DeflateStream
 		) {
 			// Resolve collision
 			nextIndex = Memory.getI32(hashOffset + 1);
-			
 			Memory.setByte(hashOffset, hashDepth);
 			Memory.setI32(hashOffset + 1, index);
 			
