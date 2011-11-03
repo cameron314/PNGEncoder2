@@ -114,12 +114,12 @@ class Test extends Sprite
 		var that = this;
 		doubleClickEnabled = true;
 		addEventListener(MouseEvent.DOUBLE_CLICK, function (e) {
-			/*
+			///*
 			var fileReference = new FileReference();
 			fileReference.save(data2, "test_png.png");
-			*/
+			//*/
 			
-			///*
+			/*
 			var fileReference = new FileReference();
 			fileReference.addEventListener(Event.SELECT, function (e2) {
 				fileReference.load();
@@ -156,15 +156,15 @@ class Test extends Sprite
 			
 			fileReference.browse();
 			
-			//*/
+			*/
 		});
 		
-		/*
+		//*
 		loader.loadBytes(data2);
 		loader.x = MARGIN + bmp.width + 10;
 		loader.y = 250;
 		addChild(loader);
-		*/
+		//*/
 		
 		
 		trace("Encoders yield same bytes: " + compare(data1, data2) + "\n");

@@ -1386,18 +1386,20 @@ class DeflateStream
 
 @:protected private class LZHash
 {
-	private static inline var HASH_BITS = 15;
+	private static inline var HASH_BITS = 16;
 	private static inline var HASH_SIZE = 1 << HASH_BITS;
 	private static inline var HASH_MASK = HASH_SIZE - 1;
-	private static inline var MAX_ATTEMPTS = 4;			// Up to this many hashes are performed on different lengths of the input string during searches
+	private static inline var SLOT_SIZE = 1 + 4;
+	private static inline var MAX_ATTEMPTS = 6;			// Up to this many entries are displaced during update
+	private static inline var MAX_HASH_DEPTH = 10;		// Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 3;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
 	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE;
 	
 	public static inline var MEMORY_SIZE = (HASH_SIZE * 2) * 4 + SCRATCH_SIZE;
-	public static inline var MAX_LOOKAHEAD = 4 + LOOKAHEADS;		// Bytes
-	public static inline var MIN_MATCH_LENGTH = 4;
+	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + 1 + LOOKAHEADS;		// Bytes
+	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
 	
 	
 	private var addr : Int;
@@ -1411,7 +1413,7 @@ class DeflateStream
 	
 	// Memory layout:
 	// HASH_SIZE slots
-	// Each slot list is composed of a 4-byte count indicating the number of
+	// Each slot list is composed of a 1-byte count indicating the number of
 	// bytes that hash of the index stored at that location was computed with,
 	// followed by a 4-byte pointer back to the original data (index)
 	
@@ -1437,7 +1439,7 @@ class DeflateStream
 		var hashOffset;
 		
 		for (_ in 0 ... LOOKAHEADS) {
-			var hashOffset = calcHashOffsets(hash4(i, HASH_MASK));
+			var hashOffset = calcHashOffset(hash4(i, HASH_MASK));
 			_search(i, hashOffset, cap);
 			_update(i, hashOffset);
 			
@@ -1459,19 +1461,19 @@ class DeflateStream
 	
 	private inline function _clearTable()
 	{
-		// Initialize hash table to empty slot lists (HASH_SIZE is divisble by 8)
+		// Initialize hash table and scratch memory (MEMORY_SIZE is divisble by 8)
 		var i = addr;
 		var end = addr + MEMORY_SIZE;
 		while (i < end) {
-			Memory.setI32(i, 0);
-			Memory.setI32(i + 4 * (SLOTS + 1), 0);
-			Memory.setI32(i + 8 * (SLOTS + 1), 0);
-			Memory.setI32(i + 12 * (SLOTS + 1), 0);
-			Memory.setI32(i + 16 * (SLOTS + 1), 0);
-			Memory.setI32(i + 20 * (SLOTS + 1), 0);
-			Memory.setI32(i + 24 * (SLOTS + 1), 0);
-			Memory.setI32(i + 28 * (SLOTS + 1), 0);
-			i += 32 * (SLOTS + 1);
+			Memory.setI32(i, -1);
+			Memory.setI32(i + 4, -1);
+			Memory.setI32(i + 8, -1);
+			Memory.setI32(i + 12, -1);
+			Memory.setI32(i + 16, -1);
+			Memory.setI32(i + 20, -1);
+			Memory.setI32(i + 24, -1);
+			Memory.setI32(i + 28, -1);
+			i += 32;
 		}
 	}
 	
@@ -1517,27 +1519,51 @@ class DeflateStream
 	
 	private inline function _search(i : Int, hashOffset : Int, cap : Int)
 	{
-		/*var slots = Memory.getUI16(hashOffset);
-		var first4 = Memory.getI32(i);
-		
-		
-		var length, distance;
-		
-		var longestLength = 0;
-		var longestEndPosition = -1;
-		
-		// Look at all the slots, finding the longest match
-		
+		var longestLength = 3;			// The longest match length so far
+		var longestEndPosition = -1;	// The index of the end of the longest match in the input string
+		var length;
 		var j, k;
-		var p = hashOffset + 4;
-		var end = p + (slots << 2);
-		while (p < end) {
-			j = Memory.getI32(p);
-			if (Memory.getI32(j) == first4 && i - j <= windowSize) {
-				// A match! Determine how long it is
+		
+		k = 0;
+		
+		// Do first iteration separately from main loop -- special case since
+		// we have the offset precalculated, and know any match is the best so far
+		
+		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
+		if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+			// Find length of match
+			k = i + 4;
+			length = 4;
+			j += 4;
+			
+			while (k + 4 <= cap && Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
+				length += 4;
+				j += 4;
+				k += 4;
+			}
+			
+			while (k < cap && Memory.getByte(j) == Memory.getByte(k) && length < maxMatchLength) {
+				++length;
+				++j;
+				++k;
+			}
+			
+			longestLength = length;
+			longestEndPosition = j;
+		}
+		
+		for (hashDepth in MIN_MATCH_LENGTH + 1 ... MAX_HASH_DEPTH) {
+			hashOffset = calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1;
+			
+			j = Memory.getI32(hashOffset);
+			
+			// Optimization trick (from Charlie Bloom): check the bytes at longest length instead of at the beginning, since they're more likely to be wrong, and they need to be right to yield a better match
+			if (j >= 0 && Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3) && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+				// Find length of match
+				k = i + 4;
 				length = 4;
 				j += 4;
-				k = i + 4;
+				
 				while (k + 4 <= cap && Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
 					length += 4;
 					j += 4;
@@ -1550,22 +1576,20 @@ class DeflateStream
 					++k;
 				}
 				
-				// Check if this match is longer than another, or equal with shorter distance
-				if (length > longestLength || (length == longestLength && k - j < i - (longestEndPosition - longestLength))) {
+				
+				// Check if this match is longer than another.
+				// We don't care about equal lengths, since the distance is necessarily
+				// greater the larger the hash depth we're looking at
+				if (length > longestLength) {
 					longestLength = length;
 					longestEndPosition = j;
 				}
 			}
-			p += 4;
 		}
 		
 		// length: longestLength,
 		// distance: i - (longestEndPosition - longestLength)
 		Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
-		*/
-		
-		
-		
 	}
 	
 	
@@ -1578,28 +1602,44 @@ class DeflateStream
 	
 	private inline function _update(i : Int, hashOffset : Int)
 	{
-		// The slot index wraps around (circular buffer).
-		// This insures the oldest (most likely to be more than
-		// windowSize away) entries are overwritten when the slots
-		// are already full
+		// Uses progressive hashing
+		// see http://fastcompression.blogspot.com/2011/10/progressive-hash-series-new-method-to.html
 		
-		var bookkeeping = Memory.getI32(hashOffset);
-		var nextIndex = bookkeeping >>> 16;
-		var count = bookkeeping & 0xFFFF;
+		var hashDepth = MIN_MATCH_LENGTH;
+		var index = i;		// Index to be inserted
+		var attempts = 1;
+		var nextDepth;
+		var nextIndex;
 		
-		Memory.setI32(hashOffset + 4 + (nextIndex << 2), i);
+		// Loop while a collision exists
+		while (
+			(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+			nextDepth >= 0 &&
+		//	i - Memory.getI32(hashOffset + 1) <= windowSize &&		// non-essential, and faster without for smaller MAX_ATTEMPTS and smaller dictionaries
+			attempts < MAX_ATTEMPTS
+		) {
+			// Resolve collision
+			nextIndex = Memory.getI32(hashOffset + 1);
+			
+			Memory.setByte(hashOffset, hashDepth);
+			Memory.setI32(hashOffset + 1, index);
+			
+			hashDepth = nextDepth + 1;
+			index = nextIndex;
+			hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+			
+			++attempts;
+		}
 		
-		// Update bookkeeping
-		++nextIndex;
-		count = (count + 1) ^ (count >>> LOG_SLOT);		// Increment count to ceiling of SLOTS
-		
-		Memory.setI32(hashOffset, ((nextIndex & SLOT_MASK) << 16) | count);
+		// Update hash (counts as attempt)
+		Memory.setByte(hashOffset, hashDepth);
+		Memory.setI32(hashOffset + 1, index);
 	}
 	
 	
 	
 	// Returns the index into a hash table for the first 3 bytes
-	// starting at addr TODO: Change from 3 to 4
+	// starting at addr -- TODO: Change from 3 to 4
 	public static inline function hash4(addr : Int, mask : Int)
 	{
 		// MurmurHash3
@@ -1652,7 +1692,7 @@ class DeflateStream
 		// Tail
 		k1 = 0;
 		switch(len & 3) {
-			case 3: k1 ^= Memory.getByte(block_ptr + 2) << 16;
+			case 3: k1  = Memory.getByte(block_ptr + 2) << 16;
 			case 2: k1 ^= Memory.getByte(block_ptr + 1) << 8;
 			case 1: k1 ^= Memory.getByte(block_ptr);
 					k1 *= c1;
@@ -1677,7 +1717,7 @@ class DeflateStream
 	
 	private inline function calcHashOffset(hash : Int)
 	{
-		return addr + ((hash * (SLOTS + 1)) << 2);
+		return addr + hash * SLOT_SIZE;
 	}
 }
 
