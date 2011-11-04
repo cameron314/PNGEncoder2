@@ -560,7 +560,7 @@ class DeflateStream
 						
 						if (i < safeEnd) {
 							// Update hash after
-							Memory.setI32(hashAddr + LZHash.hash4(i - 1, HASH_MASK) << 2, i - 1);
+							Memory.setI32(hashAddr + (LZHash.hash4(i - 1, HASH_MASK) << 2), i - 1);
 						}
 					}
 					else {
@@ -1399,7 +1399,7 @@ class DeflateStream
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE;
 	
 	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
-	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;		// Bytes
+	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
 	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
 	
 	
@@ -1441,7 +1441,7 @@ class DeflateStream
 		
 		// TODO: Unroll
 		for (_ in 0 ... LOOKAHEADS) {
-			var hashOffset = calcHashOffset(hash4(i, HASH_MASK));
+			hashOffset = calcHashOffset(hash4(i, HASH_MASK));
 			_search(i, hashOffset, cap);
 			_update(i, hashOffset);
 			
@@ -1485,6 +1485,9 @@ class DeflateStream
 	// resultAddr; Length portion will be < MIN_MATCH_LENGTH if no match was found
 	public inline function searchAndUpdate(i : Int, cap : Int)
 	{
+		var length;
+		
+		
 		// Calculate next result for lookahead cache
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
 		_search(i + LOOKAHEADS, hashOffset, cap);
@@ -1496,7 +1499,7 @@ class DeflateStream
 		resultAddr = nextResultAddr(resultAddr);
 		
 		if (Memory.getUI16(resultAddr) >= MIN_MATCH_LENGTH) {
-			var length = Memory.getUI16(resultAddr);
+			length = Memory.getUI16(resultAddr);
 			if (Memory.getUI16(nextResultAddr(resultAddr)) > length ||
 				Memory.getUI16(nextResultAddr(resultAddr + 4)) > length + 1 ||
 				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2
@@ -1504,18 +1507,34 @@ class DeflateStream
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
 			else if (i + length + MAX_LOOKAHEAD < cap) {
-				// Found match. Update hash with every byte
+				// Found match. Update hash with every byte inside match
 				for (k in i + LOOKAHEADS + 1 ... i + length) {
 					update(k);
 				}
 				
-				i += length;
-				
 				// Cache will be invalid after jump in i; repopulate
 				resultAddr = nextResultAddr(resultAddr);		// Fill up slots after (and up to) current result slot
-				initLookahead(i, cap);
+				initLookahead(i + length, cap);
 			}
 		}
+		
+		
+		
+		/*// No lookahead
+		var hashOffset = calcHashOffset(hash4(i, HASH_MASK));
+		_search(i, hashOffset, cap);
+		_update(i, hashOffset);
+		
+		if (Memory.getUI16(resultAddr) >= MIN_MATCH_LENGTH) {
+			length = Memory.getUI16(resultAddr);
+			
+			if (i + length + MAX_LOOKAHEAD < cap) {
+				// Found match. Update hash with every byte
+				for (k in i + 1 ... i + length) {
+					update(k);
+				}
+			}
+		}*/
 	}
 	
 	
@@ -1526,7 +1545,7 @@ class DeflateStream
 		var length;
 		var j, k;
 		
-		k = 0;
+		k = -1;
 		
 		// Do first iteration separately from main loop -- special case since
 		// we have the offset precalculated, and know any match is the best so far
