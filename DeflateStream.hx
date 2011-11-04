@@ -664,12 +664,6 @@ class DeflateStream
 		var currentBufferAddr;
 		
 		var hash = new LZHash(hashAddr, MAX_LENGTH, WINDOW_SIZE);
-		if (offset < end - LZHash.MAX_LOOKAHEAD) {
-			// Note that if this if is not entered, we cannot call the
-			// searchAndUpdate method, but we won't since the first inner loop
-			// will never be entered
-			hash.initLookahead(offset, end);
-		}
 		
 		while (end - offset > 0) {
 			// Assume ~50% compression ratio
@@ -685,6 +679,13 @@ class DeflateStream
 			currentBufferAddr = bufferAddr;
 			
 			i = offset;
+			
+			if (i < safeEnd) {
+				// Note that if this if is not entered, we cannot call the
+				// searchAndUpdate method, but we won't since the next loop
+				// will never be entered
+				hash.initLookahead(offset, end);
+			}
 			
 			while (i < safeEnd) {
 				hash.searchAndUpdate(i, cappedEnd);
@@ -1433,7 +1434,9 @@ class DeflateStream
 	}
 	
 	
-	// Must be called exactly once before doing anything else.
+	// Must be called exactly once before every non-consecutive (i.e. jump in i not
+	// due to an expected match) call to searchAndUpdate(), including before the
+	// first call.
 	// Cap must be > i + MAX_LOOKAHEAD
 	public inline function initLookahead(i : Int, cap : Int)
 	{
