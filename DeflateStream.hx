@@ -129,7 +129,7 @@ class DeflateStream
 	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
 	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
 	private static inline var EOB = 256;		// End of block symbol
-	private static inline var HASH_SIZE_BITS = 13;
+	private static inline var HASH_SIZE_BITS = 16;
 	private static inline var HASH_SIZE = 1 << HASH_SIZE_BITS;		// # of 4-byte slots
 	private static inline var HASH_MASK = HASH_SIZE - 1;
 	private static inline var WINDOW_SIZE = 32768;
@@ -669,7 +669,7 @@ class DeflateStream
 			// Assume ~50% compression ratio
 			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
 			lookaheadEnd = cappedEnd - LZHash.MAX_LOOKAHEAD;
-			maxMatchEnd = lookaheadEnd - MAX_LENGTH;
+			maxMatchEnd = lookaheadEnd - (MAX_LENGTH << 1) - 1;
 			
 			
 			// Phase 1: Use LZ77 compression to determine literals, lengths, and distances to
@@ -692,7 +692,7 @@ class DeflateStream
 			}
 			
 			while (i < maxMatchEnd) {
-				hash.unsafeSearchAndUpdate(i, cappedEnd);
+				hash.unsafeSearchAndUpdate(i);
 				
 				if (Memory.getUI16(hash.resultAddr) >= LZHash.MIN_MATCH_LENGTH) {
 					length = Memory.getUI16(hash.resultAddr);
@@ -1422,8 +1422,8 @@ class DeflateStream
 	private static inline var HASH_MASK = HASH_ENTRIES - 1;
 	private static inline var SLOT_SIZE = 1 + 4;
 	private static inline var HASH_SIZE = HASH_ENTRIES * SLOT_SIZE;
-	private static inline var MAX_ATTEMPTS = 6;			// Up to this many entries are displaced during update
-	private static inline var MAX_HASH_DEPTH = 9;		// Up to this many hashes are performed on different lengths of the input string during searches
+	private static inline var MAX_ATTEMPTS = 5;			// Up to this many entries are displaced during update
+	private static inline var MAX_HASH_DEPTH = 8;		// Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 3;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
 	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
@@ -1432,7 +1432,6 @@ class DeflateStream
 	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
 	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
-	
 	
 	private var addr : Int;
 	private var baseResultAddr : Int;
@@ -1484,7 +1483,7 @@ class DeflateStream
 	}
 	
 	
-	// Like regular initLookahead, but only call when i + maxMatchLen < cap
+	// Like regular initLookahead, but only call when i + maxMatchLen + 1 < cap
 	public inline function unsafeInitLookahead(i : Int)
 	{
 		var hashOffset;
@@ -1514,7 +1513,7 @@ class DeflateStream
 	
 	private inline function _clearTable()
 	{
-		// Initialize hash table (HASH_SIZE is divisble by 8)
+		// Initialize hash table (HASH_SIZE is divisble by 64 bytes)
 		var i = addr;
 		var end = addr + HASH_SIZE;
 		while (i < end) {
@@ -1526,7 +1525,15 @@ class DeflateStream
 			Memory.setI32(i + 20, -1);
 			Memory.setI32(i + 24, -1);
 			Memory.setI32(i + 28, -1);
-			i += 32;
+			Memory.setI32(i + 32, -1);
+			Memory.setI32(i + 36, -1);
+			Memory.setI32(i + 40, -1);
+			Memory.setI32(i + 44, -1);
+			Memory.setI32(i + 48, -1);
+			Memory.setI32(i + 52, -1);
+			Memory.setI32(i + 56, -1);
+			Memory.setI32(i + 60, -1);
+			i += 64;
 		}
 	}
 	
@@ -1570,8 +1577,8 @@ class DeflateStream
 		}
 	}
 	
-	// Like regular searchAndUpdate, but only call when i + maxMatchLen + MAX_LOOKAHEADS < cap
-	public inline function unsafeSearchAndUpdate(i : Int, cap : Int)
+	// Like regular searchAndUpdate, but only call when i + maxMatchLen * 2 + MAX_LOOKAHEADS + 1 < cap
+	public inline function unsafeSearchAndUpdate(i : Int)
 	{
 		var length;
 		
@@ -1651,8 +1658,7 @@ class DeflateStream
 			
 			j = Memory.getI32(hashOffset);
 			
-			// Optimization trick (borrowed from Charlie Bloom): check the bytes at longest length, since they're more likely to be wrong, and they need to be right to yield a better match
-			if (j >= 0 /*&& Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3)*/ && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+			if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
 				// Find length of match
 				k = i + 4;
 				length = 4;
@@ -1685,7 +1691,7 @@ class DeflateStream
 	}
 	
 	
-	// Like regular search, but i + maxMatchLen must be < cap
+	// Like regular search, but i + maxMatchLen + 1 must be < cap
 	private inline function _unsafeSearch(i : Int, hashOffset : Int)
 	{
 		var longestLength = 3;			// The longest match length so far
@@ -1729,7 +1735,7 @@ class DeflateStream
 			j = Memory.getI32(hashOffset);
 			
 			// Optimization trick (borrowed from Charlie Bloom): check the bytes at longest length, since they're more likely to be wrong, and they need to be right to yield a better match
-			if (j >= 0 /*&& Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3)*/ && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+			if (j >= 0 && Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3) && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
 				// Find length of match
 				k = i + 4;
 				length = 4;
