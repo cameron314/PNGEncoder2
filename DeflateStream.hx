@@ -1424,7 +1424,7 @@ class DeflateStream
 	private static inline var HASH_SIZE = HASH_ENTRIES * SLOT_SIZE;
 	private static inline var MAX_ATTEMPTS = 5;			// Up to this many entries are displaced during update
 	private static inline var MAX_HASH_DEPTH = 8;		// Up to this many hashes are performed on different lengths of the input string during searches
-	private static inline var LOOKAHEADS = 3;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
+	private static inline var LOOKAHEADS = 1;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
 	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE;
@@ -1471,32 +1471,28 @@ class DeflateStream
 	{
 		var hashOffset;
 		
-		// TODO: Unroll
-		for (_ in 0 ... LOOKAHEADS) {
-			hashOffset = calcHashOffset(hash4(i, HASH_MASK));
-			_search(i, hashOffset, cap);
-			_update(i, hashOffset);
-			
-			++i;
-			resultAddr = nextResultAddr(resultAddr);
-		}
+		//for (_ in 0 ... LOOKAHEADS) {
+		hashOffset = calcHashOffset(hash4(i, HASH_MASK));
+		_search(i, hashOffset, cap);
+		_update(i, hashOffset);
+		
+		resultAddr = nextResultAddr(resultAddr);
+		//++i;
 	}
 	
 	
-	// Like regular initLookahead, but only call when i + maxMatchLen + 1 < cap
+	// Like regular initLookahead, but only call when i + MAX_LOOKEAHEADS + maxMatchLen + 1 < cap
 	public inline function unsafeInitLookahead(i : Int)
 	{
 		var hashOffset;
 		
-		// TODO: Unroll
-		for (_ in 0 ... LOOKAHEADS) {
-			hashOffset = calcHashOffset(hash4(i, HASH_MASK));
-			_unsafeSearch(i, hashOffset);
-			_update(i, hashOffset);
-			
-			++i;
-			resultAddr = nextResultAddr(resultAddr);
-		}
+		//for (_ in 0 ... LOOKAHEADS) {
+		hashOffset = calcHashOffset(hash4(i, HASH_MASK));
+		_unsafeSearch(i, hashOffset);
+		_update(i, hashOffset);
+		
+		resultAddr = nextResultAddr(resultAddr);
+		//++i;
 	}
 	
 	
@@ -1558,9 +1554,9 @@ class DeflateStream
 		
 		if (Memory.getUI16(resultAddr) >= MIN_MATCH_LENGTH) {
 			length = Memory.getUI16(resultAddr);
-			if (Memory.getUI16(nextResultAddr(resultAddr)) > length ||
+			if (Memory.getUI16(nextResultAddr(resultAddr)) > length /* ||
 				Memory.getUI16(nextResultAddr(resultAddr + 4)) > length + 1 ||
-				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2
+				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2 */
 			) {
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
@@ -1595,9 +1591,9 @@ class DeflateStream
 		
 		if (Memory.getUI16(resultAddr) >= MIN_MATCH_LENGTH) {
 			length = Memory.getUI16(resultAddr);
-			if (Memory.getUI16(nextResultAddr(resultAddr)) > length ||
+			if (Memory.getUI16(nextResultAddr(resultAddr)) > length /* ||
 				Memory.getUI16(nextResultAddr(resultAddr + 4)) > length + 1 ||
-				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2
+				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2 */
 			) {
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
@@ -1615,7 +1611,7 @@ class DeflateStream
 	}
 	
 	
-	// Like _unsafeSearch(), but ensures matches don't exceed cap
+	// Like _unsafeSearch(), but ensures matches don't exceed cap. i must still be < cap - MAX_LOOKEAHEADS
 	private inline function _search(i : Int, hashOffset : Int, cap : Int)
 	{
 		var longestLength = 3;			// The longest match length so far
