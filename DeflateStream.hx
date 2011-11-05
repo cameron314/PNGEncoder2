@@ -649,7 +649,7 @@ class DeflateStream
 	
 	private inline function _fastWriteGood(offset : Int, end : Int)
 	{
-		var cappedEnd, safeEnd;
+		var cappedEnd, maxMatchEnd, lookaheadEnd;
 		
 		var symbol;
 		var length, lengthInfo;
@@ -668,7 +668,8 @@ class DeflateStream
 		while (end - offset > 0) {
 			// Assume ~50% compression ratio
 			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
-			safeEnd = cappedEnd - LZHash.MAX_LOOKAHEAD;
+			lookaheadEnd = cappedEnd - LZHash.MAX_LOOKAHEAD;
+			maxMatchEnd = lookaheadEnd - MAX_LENGTH;
 			
 			
 			// Phase 1: Use LZ77 compression to determine literals, lengths, and distances to
@@ -680,14 +681,43 @@ class DeflateStream
 			
 			i = offset;
 			
-			if (i < safeEnd) {
-				// Note that if this if is not entered, we cannot call the
-				// searchAndUpdate method, but we won't since the next loop
-				// will never be entered
-				hash.initLookahead(offset, end);
+			// Note that if this if (or else if) are not entered, we
+			// cannot call the searchAndUpdate method, but we won't since
+			// the next loop will never be entered
+			if (i < maxMatchEnd) {
+				hash.unsafeInitLookahead(offset);
+			}
+			else if (i < lookaheadEnd) {
+				hash.initLookahead(offset, cappedEnd);
 			}
 			
-			while (i < safeEnd) {
+			while (i < maxMatchEnd) {
+				hash.unsafeSearchAndUpdate(i, cappedEnd);
+				
+				if (Memory.getUI16(hash.resultAddr) >= LZHash.MIN_MATCH_LENGTH) {
+					length = Memory.getUI16(hash.resultAddr);
+					incSymbolFrequency(Memory.getUI16(scratchAddr + LENGTH_EXTRA_BITS_OFFSET + (length << 2) + 2));
+					
+					distanceInfo = getDistanceInfo(Memory.getUI16(hash.resultAddr + 2));
+					incSymbolFrequency(distanceInfo >>> 24, DISTANCE_OFFSET);
+					
+					Memory.setI32(currentBufferAddr, Memory.getI32(hash.resultAddr) | 512);
+					currentBufferAddr += 4;
+					
+					i += length;
+				}
+				else {
+					// No luck with hash table. Output literal:
+					symbol = Memory.getByte(i);
+					Memory.setI16(currentBufferAddr, symbol);
+					incSymbolFrequency(symbol);
+					
+					currentBufferAddr += 2;
+					++i;
+				}
+			}
+			
+			while (i < lookaheadEnd) {
 				hash.searchAndUpdate(i, cappedEnd);
 				
 				if (Memory.getUI16(hash.resultAddr) >= LZHash.MIN_MATCH_LENGTH) {
@@ -1453,6 +1483,24 @@ class DeflateStream
 		}
 	}
 	
+	
+	// Like regular initLookahead, but only call when i + maxMatchLen < cap
+	public inline function unsafeInitLookahead(i : Int)
+	{
+		var hashOffset;
+		
+		// TODO: Unroll
+		for (_ in 0 ... LOOKAHEADS) {
+			hashOffset = calcHashOffset(hash4(i, HASH_MASK));
+			_unsafeSearch(i, hashOffset);
+			_update(i, hashOffset);
+			
+			++i;
+			resultAddr = nextResultAddr(resultAddr);
+		}
+	}
+	
+	
 	private inline function nextResultAddr(resultAddr : Int)
 	{
 		return baseResultAddr + (((resultAddr - baseResultAddr) + 4) & LOOKAHEAD_MASK);
@@ -1520,27 +1568,47 @@ class DeflateStream
 				initLookahead(i + length, cap);
 			}
 		}
+	}
+	
+	// Like regular searchAndUpdate, but only call when i + maxMatchLen + MAX_LOOKAHEADS < cap
+	public inline function unsafeSearchAndUpdate(i : Int, cap : Int)
+	{
+		var length;
 		
 		
+		// Calculate next result for lookahead cache
+		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
+		_unsafeSearch(i + LOOKAHEADS, hashOffset);
+		_update(i + LOOKAHEADS, hashOffset);
 		
-		/*// No lookahead
-		var hashOffset = calcHashOffset(hash4(i, HASH_MASK));
-		_search(i, hashOffset, cap);
-		_update(i, hashOffset);
+		
+		// After incrementing, current result (calculated LOOKAHEADS steps ago) will
+		// be at resultAddr
+		resultAddr = nextResultAddr(resultAddr);
 		
 		if (Memory.getUI16(resultAddr) >= MIN_MATCH_LENGTH) {
 			length = Memory.getUI16(resultAddr);
-			
-			if (i + length + MAX_LOOKAHEAD < cap) {
-				// Found match. Update hash with every byte
-				for (k in i + 1 ... i + length) {
+			if (Memory.getUI16(nextResultAddr(resultAddr)) > length ||
+				Memory.getUI16(nextResultAddr(resultAddr + 4)) > length + 1 ||
+				Memory.getUI16(nextResultAddr(resultAddr + 8)) > length + 2
+			) {
+				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
+			}
+			else {
+				// Found match. Update hash with every byte inside match
+				for (k in i + LOOKAHEADS + 1 ... i + length) {
 					update(k);
 				}
+				
+				// Cache will be invalid after jump in i; repopulate
+				resultAddr = nextResultAddr(resultAddr);		// Fill up slots after (and up to) current result slot
+				unsafeInitLookahead(i + length);
 			}
-		}*/
+		}
 	}
 	
 	
+	// Like _unsafeSearch(), but ensures matches don't exceed cap
 	private inline function _search(i : Int, hashOffset : Int, cap : Int)
 	{
 		var longestLength = 3;			// The longest match length so far
@@ -1548,12 +1616,14 @@ class DeflateStream
 		var length;
 		var j, k;
 		
+		// Match length might exceed cap; add checks to ensure this does not happen
+		
 		k = -1;
 		
+		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
+			
 		// Do first iteration separately from main loop -- special case since
 		// we have the offset precalculated, and know any match is the best so far
-		
-		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
 		if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
 			// Find length of match
 			k = i + 4;
@@ -1611,6 +1681,88 @@ class DeflateStream
 			}
 		}
 		
+		setSearchResult(i, longestLength, longestEndPosition);
+	}
+	
+	
+	// Like regular search, but i + maxMatchLen must be < cap
+	private inline function _unsafeSearch(i : Int, hashOffset : Int)
+	{
+		var longestLength = 3;			// The longest match length so far
+		var longestEndPosition = -1;	// The index of the end of the longest match in the input string
+		var length;
+		var j, k;
+		
+		// No need to check if going past cap when finding match length (most common case)
+		
+		k = -1;
+		
+		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
+			
+		// Do first iteration separately from main loop -- special case since
+		// we have the offset precalculated, and know any match is the best so far
+		if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+			// Find length of match
+			k = i + 4;
+			length = 4;
+			j += 4;
+			
+			while (Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
+				length += 4;
+				j += 4;
+				k += 4;
+			}
+			
+			while (Memory.getByte(j) == Memory.getByte(k) && length < maxMatchLength) {
+				++length;
+				++j;
+				++k;
+			}
+			
+			longestLength = length;
+			longestEndPosition = j;
+		}
+		
+		for (hashDepth in MIN_MATCH_LENGTH + 1 ... MAX_HASH_DEPTH + 1) {
+			hashOffset = calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1;
+			
+			j = Memory.getI32(hashOffset);
+			
+			// Optimization trick (borrowed from Charlie Bloom): check the bytes at longest length, since they're more likely to be wrong, and they need to be right to yield a better match
+			if (j >= 0 /*&& Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3)*/ && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
+				// Find length of match
+				k = i + 4;
+				length = 4;
+				j += 4;
+				
+				while (Memory.getI32(j) == Memory.getI32(k) && length + 4 <= maxMatchLength) {
+					length += 4;
+					j += 4;
+					k += 4;
+				}
+				
+				while (Memory.getByte(j) == Memory.getByte(k) && length < maxMatchLength) {
+					++length;
+					++j;
+					++k;
+				}
+				
+				
+				// Check if this match is longer than another.
+				// We don't care about equal lengths, since the distance is necessarily
+				// greater the larger the hash depth we're looking at
+				if (length > longestLength) {
+					longestLength = length;
+					longestEndPosition = j;
+				}
+			}
+		}
+		
+		setSearchResult(i, longestLength, longestEndPosition);
+	}
+	
+	private inline function setSearchResult(i : Int, longestLength : Int, longestEndPosition : Int)
+	{
 		// length: longestLength,
 		// distance: i - (longestEndPosition - longestLength)
 		Memory.setI32(resultAddr, ((i - (longestEndPosition - longestLength)) << 16) | longestLength);
