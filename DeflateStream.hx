@@ -1813,8 +1813,8 @@ class DeflateStream
 	
 	
 	
-	// Returns the index into a hash table for the first 3 bytes
-	// starting at addr -- TODO: Change from 3 to 4
+	// Returns the index into a hash table for the first 4 bytes
+	// starting at addr
 	public static inline function hash4(addr : Int, mask : Int)
 	{
 		// MurmurHash3
@@ -1824,14 +1824,15 @@ class DeflateStream
 		var c1 = 0xcc9e2d51;
 		var c2 = 0x1b873593;
 		
-		var k1 = (Memory.getUI16(addr + 1) << 8) | Memory.getByte(addr);
-        k1 *= c1;
-		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// ROTL32(k1, 15)
-		k1 *= c2;
-		h1 ^= k1;
-		h1 ^= 3;
+		var k1 = Memory.getI32(addr) * c1;
+		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
 		
-		return murmur_fmix(h1) & mask;
+		h1 ^= k1 * c2;
+		h1 = (h1 << 13) | (h1 >>> (32 - 13));	// h1 = ROTL32(h1, 13);
+		h1 = h1 * 5 + 0xe6546b64;
+		
+		// Finalization
+		return murmur_fmix(h1 ^ 4) & mask;
 	}
 	
 	
