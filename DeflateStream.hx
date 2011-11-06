@@ -1423,11 +1423,12 @@ class DeflateStream
 	private static inline var SLOT_SIZE = 1 + 4;
 	private static inline var HASH_SIZE = HASH_ENTRIES * SLOT_SIZE;
 	private static inline var MAX_ATTEMPTS = 5;			// Up to this many entries are displaced during update
-	private static inline var MAX_HASH_DEPTH = 8;		// Up to this many hashes are performed on different lengths of the input string during searches
+	private static inline var MAX_HASH_DEPTH = 8;		// Hash code depends on this value (change that when changing this). Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 1;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
 	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
-	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE;
+	private static inline var HASH_SCRATCH_SIZE = MAX_HASH_DEPTH + (((MAX_HASH_DEPTH - MIN_MATCH_LENGTH - 1) >>> 2) + 1) * 4;	// MAX_HASH_DEPTH + difference rounded to 4
+	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE + HASH_SCRATCH_SIZE;
 	
 	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
@@ -1435,6 +1436,7 @@ class DeflateStream
 	
 	private var addr : Int;
 	private var baseResultAddr : Int;
+	private var hashScratchAddr : Int;
 	private var maxMatchLength : Int;
 	private var windowSize : Int;
 	
@@ -1458,6 +1460,7 @@ class DeflateStream
 		this.windowSize = windowSize;
 		
 		baseResultAddr = resultAddr = addr + MEMORY_SIZE - SCRATCH_SIZE;
+		hashScratchAddr = baseResultAddr + LOOKAHEAD_SIZE;
 		
 		clearTable();
 	}
@@ -1509,7 +1512,7 @@ class DeflateStream
 	
 	private inline function _clearTable()
 	{
-		// Initialize hash table (HASH_SIZE is divisble by 64 bytes)
+		// Initialize hash table (HASH_SIZE is divisble by 32 bytes)
 		var i = addr;
 		var end = addr + HASH_SIZE;
 		while (i < end) {
@@ -1521,15 +1524,7 @@ class DeflateStream
 			Memory.setI32(i + 20, -1);
 			Memory.setI32(i + 24, -1);
 			Memory.setI32(i + 28, -1);
-			Memory.setI32(i + 32, -1);
-			Memory.setI32(i + 36, -1);
-			Memory.setI32(i + 40, -1);
-			Memory.setI32(i + 44, -1);
-			Memory.setI32(i + 48, -1);
-			Memory.setI32(i + 52, -1);
-			Memory.setI32(i + 56, -1);
-			Memory.setI32(i + 60, -1);
-			i += 64;
+			i += 32;
 		}
 	}
 	
@@ -1838,46 +1833,42 @@ class DeflateStream
 	}
 	
 	
-	public static inline function hash(addr : Int, len : Int, mask : Int)
+	// Reads up to MAX_HASH_DEPTH bytes ahead (but only hashes on the next len of them)
+	public inline function hash(addr : Int, len : Int, mask : Int)
 	{
 		// MurmurHash3
 		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+		
+		// Put MAX_HASH_DEPTH bytes in buffer
+		Memory.setI32(hashScratchAddr, Memory.getI32(addr));
+		Memory.setI32(hashScratchAddr + 4, Memory.getI32(addr + 4));
+		
+		// Clear unwanted bytes of buffer to 0
+		Memory.setI32(hashScratchAddr + len, 0);
+		//Memory.setI32(hashScratchAddr + len + 4, 0);	// Uncomment if 8 < MAX_HASH_DEPTH <= 12
+		
 		
 		var h1 = 0x2e352bcd;		// Seed (randomly chosen number in this case)
 		var c1 = 0xcc9e2d51;
 		var c2 = 0x1b873593;
 		
-		var nblocks = len >>> 2;
-		var block_ptr = addr + (nblocks << 2);
-		var k1;
+		// Body: MAX_HASH_DEPTH of 8 gives 2 blocks, unrolled
 		
-		// Body
-		var i = -nblocks;
-		while (i != 0) {
-			k1 = Memory.getI32(block_ptr + (i << 2));
-			
-			k1 *= c1;
-			k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
-			k1 *= c2;
-			
-			h1 ^= k1;
-			h1 = (h1 << 13) | (h1 >>> (32 - 13));	// h1 = ROTL32(h1, 13);
-			h1 = h1 * 5 + 0xe6546b64;
-			
-			++i;
-		}
+		// Block 1
+		var k1 = Memory.getI32(hashScratchAddr) * c1;
+		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
 		
-		// Tail
-		k1 = 0;
-		switch(len & 3) {
-			case 3: k1  = Memory.getByte(block_ptr + 2) << 16;
-			case 2: k1 ^= Memory.getByte(block_ptr + 1) << 8;
-			case 1: k1 ^= Memory.getByte(block_ptr);
-					k1 *= c1;
-					k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
-					k1 *= c2;
-					h1 ^= k1;
-		}
+		h1 ^= k1 * c2;
+		h1 = (h1 << 13) | (h1 >>> (32 - 13));	// h1 = ROTL32(h1, 13);
+		h1 = h1 * 5 + 0xe6546b64;
+		
+		// Block 2
+		k1 = Memory.getI32(hashScratchAddr + 4) * c1;
+		k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
+		
+		h1 ^= k1 * c2;
+		h1 = (h1 << 13) | (h1 >>> (32 - 13));	// h1 = ROTL32(h1, 13);
+		h1 = h1 * 5 + 0xe6546b64;
 		
 		// Finalization
 		return murmur_fmix(h1 ^ len) & mask;
