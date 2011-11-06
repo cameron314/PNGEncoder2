@@ -1429,17 +1429,19 @@ class DeflateStream
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
 	private static inline var HASH_SCRATCH_SIZE = MAX_HASH_DEPTH + (((MAX_HASH_DEPTH - MIN_MATCH_LENGTH - 1) >>> 2) + 1) * 4;	// MAX_HASH_DEPTH + difference rounded to 4
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE + HASH_SCRATCH_SIZE;
+	private static inline var GOOD_MATCH_LENGTH_THRESHOLD = 3;		// A length of this size more than average is considered sufficient
 	
 	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
 	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
-	private static inline var GOOD_MATCH_LENGTH = 15;	// Don't bother looking ahead after this
+	
 	
 	private var addr : Int;
 	private var baseResultAddr : Int;
 	private var hashScratchAddr : Int;
 	private var maxMatchLength : Int;
 	private var windowSize : Int;
+	private var avgMatchLength : Int;
 	
 	public var resultAddr : Int;
 	
@@ -1459,6 +1461,8 @@ class DeflateStream
 		this.addr = addr;
 		this.maxMatchLength = maxMatchLength;
 		this.windowSize = windowSize;
+		
+		avgMatchLength = 12;
 		
 		baseResultAddr = resultAddr = addr + MEMORY_SIZE - SCRATCH_SIZE;
 		hashScratchAddr = baseResultAddr + LOOKAHEAD_SIZE;
@@ -1542,7 +1546,7 @@ class DeflateStream
 		
 		// Calculate next result for lookahead cache
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
-		if (Memory.getUI16(nextResultAddr(resultAddr)) < GOOD_MATCH_LENGTH) {
+		if (Memory.getUI16(nextResultAddr(resultAddr)) < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 			_search(i + LOOKAHEADS, hashOffset, cap);
 		}
 		else {
@@ -1584,7 +1588,7 @@ class DeflateStream
 		
 		// Calculate next result for lookahead cache
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
-		if (Memory.getUI16(nextResultAddr(resultAddr)) < GOOD_MATCH_LENGTH) {
+		if (Memory.getUI16(nextResultAddr(resultAddr)) < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 			_unsafeSearch(i + LOOKAHEADS, hashOffset);
 		}
 		else {
@@ -1605,8 +1609,11 @@ class DeflateStream
 			) {
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
-			else {
-				// Found match. Update hash with every byte inside match
+			else {		// Found match
+				// Set average match length to the average of its current value and this value, or MIN_MATCH_LENGTH (whichever is higher)
+				avgMatchLength = (avgMatchLength + length) >>> 1;
+				
+				// Update hash with every byte inside match
 				for (k in i + LOOKAHEADS + 1 ... i + length) {
 					update(k);
 				}
@@ -1708,7 +1715,7 @@ class DeflateStream
 		k = -1;
 		
 		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
-			
+		
 		// Do first iteration separately from main loop -- special case since
 		// we have the offset precalculated, and know any match is the best so far
 		if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
