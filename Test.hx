@@ -114,7 +114,7 @@ class Test extends Sprite
 		var that = this;
 		doubleClickEnabled = true;
 		addEventListener(MouseEvent.DOUBLE_CLICK, function (e) {
-			///*
+			//*
 			var fileReference = new FileReference();
 			fileReference.save(data2, "test_png.png");
 			//*/

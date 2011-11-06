@@ -1433,6 +1433,7 @@ class DeflateStream
 	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
 	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
+	private static inline var GOOD_MATCH_LENGTH = 15;	// Don't bother looking ahead after this
 	
 	private var addr : Int;
 	private var baseResultAddr : Int;
@@ -1489,10 +1490,12 @@ class DeflateStream
 	{
 		var hashOffset;
 		
+		
 		//for (_ in 0 ... LOOKAHEADS) {
 		hashOffset = calcHashOffset(hash4(i, HASH_MASK));
 		_unsafeSearch(i, hashOffset);
 		_update(i, hashOffset);
+		
 		
 		resultAddr = nextResultAddr(resultAddr);
 		//++i;
@@ -1539,7 +1542,12 @@ class DeflateStream
 		
 		// Calculate next result for lookahead cache
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
-		_search(i + LOOKAHEADS, hashOffset, cap);
+		if (Memory.getUI16(nextResultAddr(resultAddr)) < GOOD_MATCH_LENGTH) {
+			_search(i + LOOKAHEADS, hashOffset, cap);
+		}
+		else {
+			Memory.setI32(resultAddr, 0);
+		}
 		_update(i + LOOKAHEADS, hashOffset);
 		
 		
@@ -1576,7 +1584,12 @@ class DeflateStream
 		
 		// Calculate next result for lookahead cache
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
-		_unsafeSearch(i + LOOKAHEADS, hashOffset);
+		if (Memory.getUI16(nextResultAddr(resultAddr)) < GOOD_MATCH_LENGTH) {
+			_unsafeSearch(i + LOOKAHEADS, hashOffset);
+		}
+		else {
+			Memory.setI32(resultAddr, 0);
+		}
 		_update(i + LOOKAHEADS, hashOffset);
 		
 		
@@ -1869,6 +1882,18 @@ class DeflateStream
 		h1 ^= k1 * c2;
 		h1 = (h1 << 13) | (h1 >>> (32 - 13));	// h1 = ROTL32(h1, 13);
 		h1 = h1 * 5 + 0xe6546b64;
+		
+		// Tail: MAX_HASH_DEPTH & 3 == 0
+		/*k1 = 0;
+		switch(len & 3) {
+			case 3: k1  = Memory.getByte(block_ptr + 2) << 16;
+			case 2: k1 ^= Memory.getByte(block_ptr + 1) << 8;
+			case 1: k1 ^= Memory.getByte(block_ptr);
+					k1 *= c1;
+					k1 = (k1 << 15) | (k1 >>> (32 - 15));	// k1 = ROTL32(k1, 15);
+					k1 *= c2;
+					h1 ^= k1;
+		}*/
 		
 		// Finalization
 		return murmur_fmix(h1 ^ len) & mask;
