@@ -1429,7 +1429,7 @@ class DeflateStream
 	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
 	private static inline var HASH_SCRATCH_SIZE = MAX_HASH_DEPTH + (((MAX_HASH_DEPTH - MIN_MATCH_LENGTH - 1) >>> 2) + 1) * 4;	// MAX_HASH_DEPTH + difference rounded to 4
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE + HASH_SCRATCH_SIZE;
-	private static inline var GOOD_MATCH_LENGTH_THRESHOLD = 3;		// A length of this size more than average is considered sufficient
+	private static inline var GOOD_MATCH_LENGTH_THRESHOLD = 4;		// A length of this size more than average is considered sufficient
 	
 	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
 	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
@@ -1568,9 +1568,13 @@ class DeflateStream
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
 			else if (i + length + MAX_LOOKAHEAD < cap) {
-				// Found match. Update hash with every byte inside match
-				for (k in i + LOOKAHEADS + 1 ... i + length) {
-					update(k);
+				// Found match
+				
+				if (length < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
+					// Update hash with every byte inside match
+					for (k in i + LOOKAHEADS + 1 ... i + length) {
+						update(k);
+					}
 				}
 				
 				// Cache will be invalid after jump in i; repopulate
@@ -1612,10 +1616,11 @@ class DeflateStream
 			else {		// Found match
 				// Set average match length to the average of its current value and this value, or MIN_MATCH_LENGTH (whichever is higher)
 				avgMatchLength = (avgMatchLength + length) >>> 1;
-				
-				// Update hash with every byte inside match
-				for (k in i + LOOKAHEADS + 1 ... i + length) {
-					update(k);
+				if (length < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
+					// Update hash with every byte inside match
+					for (k in i + LOOKAHEADS + 1 ... i + length) {
+						update(k);
+					}
 				}
 				
 				// Cache will be invalid after jump in i; repopulate
