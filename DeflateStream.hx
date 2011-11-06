@@ -208,6 +208,7 @@ class DeflateStream
 		var minLength : UInt = startAddr + 15;
 		if (mem.length < minLength) {
 			mem.length = minLength;
+			Memory.select(mem);
 		}
 		
 		distanceCodes = -1;
@@ -244,6 +245,7 @@ class DeflateStream
 		var uend : UInt = end;
 		if (mem.length < uend) {
 			mem.length = end;
+			Memory.select(mem);
 		}
 		
 		memcpy(bytes, offset);
@@ -317,6 +319,7 @@ class DeflateStream
 		var freeSpace : UInt = mem.length - currentAddr;
 		if (freeSpace < minimumSize) {
 			mem.length = currentAddr + minimumSize;
+			Memory.select(mem);
 		}
 		
 		while (end - offset > 0) {
@@ -365,6 +368,7 @@ class DeflateStream
 		var mem = ApplicationDomain.currentDomain.domainMemory;
 		if (_maxOutputBufferSize(len) > mem.length - currentAddr) {
 			mem.length = _maxOutputBufferSize(len) + currentAddr;
+			Memory.select(mem);
 		}
 		
 		if (zlib) {
@@ -1573,7 +1577,7 @@ class DeflateStream
 				if (length < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 					// Update hash with every byte inside match
 					for (k in i + LOOKAHEADS + 1 ... i + length) {
-						update(k);
+						fastUpdate(k);
 					}
 				}
 				
@@ -1614,12 +1618,13 @@ class DeflateStream
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
 			else {		// Found match
-				// Set average match length to the average of its current value and this value, or MIN_MATCH_LENGTH (whichever is higher)
-				avgMatchLength = (avgMatchLength + length) >>> 1;
+				// Set average match length to the average of its current value and this value (weighted 6 to 2 in favour of current average)
+				avgMatchLength = ((avgMatchLength << 1) + (avgMatchLength << 2) + (length << 1)) >>> 3;
+				
 				if (length < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 					// Update hash with every byte inside match
 					for (k in i + LOOKAHEADS + 1 ... i + length) {
-						update(k);
+						fastUpdate(k);
 					}
 				}
 				
@@ -1809,14 +1814,13 @@ class DeflateStream
 		var nextDepth;
 		var nextIndex;
 		
-		// Loop while a collision exists
-		while (
+		// Loop (unrolled for speed) while a collision exists
+		if (
 			(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
-			nextDepth >= 0 &&
-		//	i - Memory.getI32(hashOffset + 1) <= windowSize &&		// non-essential, and faster without for smaller MAX_ATTEMPTS and smaller dictionaries
-			attempts < MAX_ATTEMPTS
+			nextDepth >= 0
+			// && i - Memory.getI32(hashOffset + 1) <= windowSize		// non-essential, and faster without for smaller MAX_ATTEMPTS and smaller dictionaries
 		) {
-			// Resolve collision
+			// Resolve first collision
 			nextIndex = Memory.getI32(hashOffset + 1);
 			Memory.setByte(hashOffset, hashDepth);
 			Memory.setI32(hashOffset + 1, index);
@@ -1825,12 +1829,126 @@ class DeflateStream
 			index = nextIndex;
 			hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
 			
-			++attempts;
+			if (
+				(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+				nextDepth >= 0
+			) {
+				// Resolve second collision
+				nextIndex = Memory.getI32(hashOffset + 1);
+				Memory.setByte(hashOffset, hashDepth);
+				Memory.setI32(hashOffset + 1, index);
+				
+				hashDepth = nextDepth + 1;
+				index = nextIndex;
+				hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+				
+				if (
+					(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+					nextDepth >= 0
+				) {
+					// Resolve third collision
+					nextIndex = Memory.getI32(hashOffset + 1);
+					Memory.setByte(hashOffset, hashDepth);
+					Memory.setI32(hashOffset + 1, index);
+					
+					hashDepth = nextDepth + 1;
+					index = nextIndex;
+					hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+					
+					if (
+						(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+						nextDepth >= 0
+					) {
+						// Resolve fourth collision
+						nextIndex = Memory.getI32(hashOffset + 1);
+						Memory.setByte(hashOffset, hashDepth);
+						Memory.setI32(hashOffset + 1, index);
+						
+						hashDepth = nextDepth + 1;
+						index = nextIndex;
+						hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+					}
+				}
+			}
 		}
 		
 		// Update hash (counts as attempt)
 		Memory.setByte(hashOffset, hashDepth);
 		Memory.setI32(hashOffset + 1, index);
+	}
+	
+	
+	// Like update(), but resolves collisions brutally in the interest of speed
+	private inline function fastUpdate(i : Int)
+	{
+		var hashDepth = MIN_MATCH_LENGTH;
+		var index = i;		// Index to be inserted
+		var nextDepth;
+		var nextIndex;
+		var hashOffset = calcHashOffset(hash4(i, HASH_MASK));
+		
+		if (
+			(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+			nextDepth >= 0
+		) {
+			// Resolve first collision
+			nextIndex = Memory.getI32(hashOffset + 1);
+			Memory.setByte(hashOffset, hashDepth);
+			Memory.setI32(hashOffset + 1, index);
+			
+			hashDepth = nextDepth + 1;
+			index = nextIndex;
+			hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+			
+			if (
+				(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+				nextDepth >= 0
+			) {
+				// Resolve second collision
+				nextIndex = Memory.getI32(hashOffset + 1);
+				Memory.setByte(hashOffset, hashDepth);
+				Memory.setI32(hashOffset + 1, index);
+				
+				hashDepth = nextDepth + 1;
+				index = nextIndex;
+				hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+				/*
+				if (
+					(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+					nextDepth >= 0
+				) {
+					// Resolve third collision
+					nextIndex = Memory.getI32(hashOffset + 1);
+					Memory.setByte(hashOffset, hashDepth);
+					Memory.setI32(hashOffset + 1, index);
+					
+					hashDepth = nextDepth + 1;
+					index = nextIndex;
+					hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+					
+					if (
+						(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
+						nextDepth >= 0
+					) {
+						// Resolve fourth collision
+						nextIndex = Memory.getI32(hashOffset + 1);
+						Memory.setByte(hashOffset, hashDepth);
+						Memory.setI32(hashOffset + 1, index);
+						
+						hashDepth = nextDepth + 1;
+						index = nextIndex;
+						hashOffset = calcHashOffset(hash(index, hashDepth, HASH_MASK));
+					}
+				}*/
+			}
+		}
+		
+		// Update hash
+		Memory.setByte(hashOffset, hashDepth);
+		Memory.setI32(hashOffset + 1, index);
+		
+		
+		//update(i);
 	}
 	
 	
