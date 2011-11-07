@@ -523,7 +523,6 @@ class DeflateStream
 			cappedEnd = Std.int(Math.min(end, offset + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
 			safeEnd = cappedEnd - 4;		// Can read up to 4 ahead without worrying
 			
-			
 			// Phase 1: Use LZ77 compression to determine literals, lengths, and distances to
 			// later be encoded. Put these in a temporary output buffer, and track the frequency
 			// of each symbol
@@ -532,7 +531,6 @@ class DeflateStream
 			currentBufferAddr = bufferAddr;
 			
 			i = offset;
-			
 			while (i < safeEnd) {
 				hashOffset = LZHash.hash4(i, HASH_MASK) << 2;	// Multiply by 4 since each entry is 4 bytes
 				j = Memory.getI32(hashAddr + hashOffset);
@@ -541,6 +539,7 @@ class DeflateStream
 					length = 4;
 					j += 4;
 					k = i + 4;
+					
 					while (k < cappedEnd && Memory.getByte(j) == Memory.getByte(k) && length < MAX_LENGTH) {
 						++j;
 						++k;
