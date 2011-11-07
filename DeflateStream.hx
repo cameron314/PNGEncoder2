@@ -1426,7 +1426,7 @@ class DeflateStream
 	private static inline var HASH_MASK = HASH_ENTRIES - 1;
 	private static inline var SLOT_SIZE = 1 + 4;
 	private static inline var HASH_SIZE = HASH_ENTRIES * SLOT_SIZE;
-	private static inline var MAX_ATTEMPTS = 5;			// Up to this many entries are displaced during update
+	private static inline var MAX_ATTEMPTS = 5;			// Up to this many entries are displaced during update. _update() and fastUpdate() are hardcoded to this value
 	private static inline var MAX_HASH_DEPTH = 8;		// Hash code depends on this value (change that when changing this). Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 1;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
 	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
@@ -1646,8 +1646,6 @@ class DeflateStream
 		
 		// Match length might exceed cap; add checks to ensure this does not happen
 		
-		k = -1;
-		
 		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
 			
 		// Do first iteration separately from main loop -- special case since
@@ -1675,9 +1673,7 @@ class DeflateStream
 		}
 		
 		for (hashDepth in MIN_MATCH_LENGTH + 1 ... MAX_HASH_DEPTH + 1) {
-			hashOffset = calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1;
-			
-			j = Memory.getI32(hashOffset);
+			j = Memory.getI32(calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1);
 			
 			if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
 				// Find length of match
@@ -1722,8 +1718,6 @@ class DeflateStream
 		
 		// No need to check if going past cap when finding match length (most common case)
 		
-		k = -1;
-		
 		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
 		
 		// Do first iteration separately from main loop -- special case since
@@ -1751,9 +1745,7 @@ class DeflateStream
 		}
 		
 		for (hashDepth in MIN_MATCH_LENGTH + 1 ... MAX_HASH_DEPTH + 1) {
-			hashOffset = calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1;
-			
-			j = Memory.getI32(hashOffset);
+			j = Memory.getI32(calcHashOffset(hash(i, hashDepth, HASH_MASK)) + 1);
 			
 			// Optimization trick (borrowed from Charlie Bloom): check the bytes at longest length, since they're more likely to be wrong, and they need to be right to yield a better match
 			if (j >= 0 && Memory.getI32(j + longestLength - 3) == Memory.getI32(i + longestLength - 3) && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
@@ -1810,7 +1802,6 @@ class DeflateStream
 		
 		var hashDepth = MIN_MATCH_LENGTH;
 		var index = i;		// Index to be inserted
-		var attempts = 1;
 		var nextDepth;
 		var nextIndex;
 		
