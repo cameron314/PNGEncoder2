@@ -82,7 +82,6 @@ As such, here is the zlib license in its entirety (from zlib.h):
 
 package;
 
-import flash.errors.ArgumentsError;
 import flash.errors.Error;
 import flash.Lib;
 import flash.Memory;
