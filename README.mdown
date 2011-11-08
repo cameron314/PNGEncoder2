@@ -7,43 +7,45 @@ a target FPS).
 
 Synchronous example:
 
-    var bmp : BitmapData = ...;		// The bitmap you want to encode
-    var png : ByteArray;
-	
-	PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
-	
-	png = PNGEncoder2.encode(bmp);
-	
+```as3
+var bmp : BitmapData = ...;		// The bitmap you want to encode
+var png : ByteArray;
+
+PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
+
+png = PNGEncoder2.encode(bmp);
+```
 	
 Asynchronous example:
 
-	var bmp : BitmapData = ...;		// The bitmap you want to encode
-	
-	PNGEncoder2.level = CompressionLevel.FAST	// Optional. Defaults to FAST
-	
-	var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp);
-	encoder.targetFPS = 12;		// Optional. Defaults to 20. Lower FPSs yield faster compression
-	
-	// Because the encoder is guaranteed to fire the COMPLETE event
-	// after at least one frame, it's safe to attach the listener after
-	// starting the encoding (as long as it's done before the next frame)
-	encoder.addEventListener(Event.COMPLETE, function (e) {
-		var png : ByteArray = encoder.png;
-	});
-	
-	// encoder also dispatches ProgressEvent.PROGRESS events if you
-	// want to be notified of progress
+```as3
+var bmp : BitmapData = ...;		// The bitmap you want to encode
 
+PNGEncoder2.level = CompressionLevel.FAST	// Optional. Defaults to FAST
+
+var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp);
+encoder.targetFPS = 12;		// Optional. Defaults to 20. Lower FPSs yield faster compression
+
+// Because the encoder is guaranteed to fire the COMPLETE event
+// after at least one frame, it's safe to attach the listener after
+// starting the encoding (as long as it's done before the next frame)
+encoder.addEventListener(Event.COMPLETE, function (e) {
+	var png : ByteArray = encoder.png;
+});
+
+// encoder also dispatches ProgressEvent.PROGRESS events if you
+// want to be notified of progress
+```
 
 
 Installation
 ============
 
-ActionScript 3
---------------
+### ActionScript 3
+
 If you're using ActionScript 3 you can simply
 [download the SWC][swc] file and link it to your
-project. There are ["slim" versions][slim] of the library
+project. There are also ["slim" versions][slim] of the library
 that contain only a single compression method each;
 these are recommended for production since they are smaller.
 
@@ -59,17 +61,23 @@ select it
 4. Press OK!
 
 To link an SWC in other versions of the Flash IDE, follow
-[this guide][http://www.myflashlab.com/2010/01/17/how-to-use-swc/] instead.
+[this guide][how-to-swc] instead.
 
 
-HaXe
-----
+### HaXe
+
 If you're using HaXe, it's much simpler to use the source
 directly than to fiddle with SWCs. All you need is the
 "PNGEncoder2.hx" and "DeflateStream.hx" files available
 at the [GitHub repository][repo].
 
+If you want to have only one compression method compiled
+(to cut down on generated code size), add `-D FAST_ONLY`,
+`-D NORMAL_ONLY`, or `-D GOOD_ONLY` to your compile options
+(this is equivalent to using the slim SWC versions).
 
-[swc]: null
-[slim]: null
-[repo]: null
+
+[swc]: https://github.com/cameron314/PNGEncoder2/raw/master/PNGEncoder2.swc
+[how-to-swc]: http://www.myflashlab.com/2010/01/17/how-to-use-swc/
+[slim]: https://github.com/cameron314/PNGEncoder2/tree/master/slim
+[repo]: https://github.com/cameron314/PNGEncoder2
