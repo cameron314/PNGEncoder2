@@ -64,10 +64,12 @@ class PNGEncoder2 extends EventDispatcher
 	
 	public static var level : CompressionLevel;
 	
+	// Provide both HaXe and AS3 properties to access the PNG result for reading
 	@:protected private inline function getPng() return __impl.png
 	@:protected public var png(getPng, null) : ByteArray;
 	@:getter(png) private function flGetPng() return getPng()
 	
+	// Provide both HaXe and AS3 properties to access the target FPS (read/write)
 	@:protected private inline function getTargetFPS() return __impl.targetFPS
 	@:protected private inline function setTargetFPS(fps : Int) return __impl.targetFPS = fps
 	@:protected public var targetFPS(getTargetFPS, setTargetFPS) : Int;
@@ -77,6 +79,9 @@ class PNGEncoder2 extends EventDispatcher
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData.
+	 * If the BitmapData's transparent property is true, then a 32-bit
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * 24-bit PNG is generated.
 	 * Highly optimized for speed.
 	 *
 	 * @param image The BitmapData that will be converted into the PNG format.
@@ -92,10 +97,15 @@ class PNGEncoder2 extends EventDispatcher
 	
 	/**
 	 * Creates a PNG image from the specified BitmapData without blocking.
+	 * If the BitmapData's transparent property is true, then a 32-bit
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * 24-bit PNG is generated.
 	 * Highly optimized for speed.
 	 *
 	 * @param image The BitmapData that will be converted into the PNG format.
 	 * @return a PNGEncoder2 object that dispatches COMPLETE and PROGRESS events.
+	 * The encoder object allows the targetFPS to be set, and has a 'png'
+	 * property to access the encoded data once the COMPLETE event has fired.
 	 * @playerversion Flash 10
 	 */
 	public static function encodeAsync(image : BitmapData) : PNGEncoder2
@@ -114,40 +124,54 @@ class PNGEncoder2 extends EventDispatcher
 }
 
 
+// The actual implementation of all PNG functionality (heavily refactored
+// and improved from the HaXe port of the original AS3 version -- new features
+// include fast performance, 24- and 32-bit PNG support, the Paeth filter,
+// and asynchronous encoding)
 @:protected private class PNGEncoder2Impl
 {
+	// Domain memory (aka "fast memory") layout:
+	// 0:           CRC table (256 4-byte entries)
+	// 1024:        Deflate stream (fixed) scratch memory
+	// CHUNK_START: Compressed image data to be written to the next chunk in the output
+	// After chunk: Additional scratch memory used to construct the chunk
+	
 	private static inline var CRC_TABLE_END = 256 * 4;
 	private static inline var DEFLATE_SCRATCH = CRC_TABLE_END;
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
-	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Must be power of 2. Number of frames to calculate averages from
-	private static inline var MIN_PIXELS_PER_FRAME = 20 * 1024;
-	private static var data : ByteArray;
-	private static var sprite : Sprite;		// Used to listen to ENTER_FRAME events
-	private static var encoding = false;
+	
+	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Number of frames to calculate averages from. Must be power of 2
+	private static inline var MIN_PIXELS_PER_FRAME = 20 * 1024;		// Always compress at least this many pixels per chunk
+	private static var data : ByteArray;	// The select()ed working memory
+	private static var sprite : Sprite;		// Used purely to listen to ENTER_FRAME events
+	private static var encoding = false;	// Keeps track of global state, to ensure only one PNG can be encoded at once
 	
 	// FAST compression level is default
 	public static var level : CompressionLevel;
 	
-	public var png : ByteArray;
-	public var targetFPS : Int;
+	//
+	// Asynchronous encoder member variables:
+	//
+	public var png : ByteArray;		// The resulting PNG output for the asynchronous encoder
+	public var targetFPS : Int;		// The desired number of frames-per-second during asynchronous encoding (will attempt to achieve this)
 	
-	private var img : BitmapData;
-	private var dispatcher : IEventDispatcher;
-	private var deflateStream : DeflateStream;
-	private var currentY : Int;
-	private var msPerFrame : Vector<Int>;
-	private var msPerFrameIndex : Int;
-	private var msPerLine : Vector<Float>;
-	private var msPerLineIndex : Int;
-	private var updatesPerFrame : Vector<Int>;
-	private var updatesPerFrameIndex : Int;
-	private var updates : Int;
-	private var lastFrameStart : Int;
-	private var step : Int;
-	private var done : Bool;
-	private var timer : Timer;
+	private var img : BitmapData;	// The input image
+	private var dispatcher : IEventDispatcher;		// The dispatcher to use for dispatching PROGRESS and COMPLETE events
+	private var deflateStream : DeflateStream;		// To compress each chunk's data
+	private var currentY : Int;						// The current scanline in the input image (tracks progress)
+	private var msPerFrame : Vector<Int>;			// Keeps track of last FRAME_AVG_SMOOTH_COUNT measures of milliseconds between sequential frame
+	private var msPerFrameIndex : Int;				// Index into msPerFrame at which to store next measure
+	private var msPerLine : Vector<Float>;			// Keeps track of last FRAME_AVG_SMOOTH_COUNT measures (one per chunk) of average milliseconds to process a single line
+	private var msPerLineIndex : Int;				// Index into msPerLine at which to store next measure
+	private var updatesPerFrame : Vector<Int>;		// Keeps track of last FRAME_AVG_SMOOTH_COUNT measures of the number of updates (i.e. chunks) that can be processed per frame (generally just one except at very low frame rates)
+	private var updatesPerFrameIndex : Int;			// Index into updatesPerFrame at which to store next measure
+	private var updates : Int;						// Total number of updates (i.e. chunks) done *since the last frame was entered*
+	private var lastFrameStart : Int;				// Lib.getTimer() value. Used to calculate millisecond delta between two frames
+	private var step : Int;							// Number of scanlines to process during the next update (in order to approximate targetFPS, but without wasting cycles)
+	private var done : Bool;						// Whether there's any more scanlines to process or not
+	private var timer : Timer;						// Used to trigger an update as often as possible
 	
-	private var frameCount : Int;
+	private var frameCount : Int;					// Total number of frames that have elapsed so far during the encoding
 	
 	public static inline function encode(img : BitmapData) : ByteArray
 	{
@@ -172,12 +196,17 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		if (encoding) {
 			throw new Error("Only one PNG can be encoded at once");
+			
+			// This limitation is in place to make the implementation simpler;
+			// there is only one domain memory chunk across all PNG encoding
+			// (because it contains cached values like the CRC table).
 		}
 		
 		encoding = true;
 		
 		
 		if (level == null) {
+			// Use default if no level explicitly specified
 			level = FAST;
 		}
 		
@@ -223,6 +252,8 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		lastFrameStart = Lib.getTimer();
 		
+		// Preserve current domain memory so that we can leave it as we found
+		// it once we've finished using it
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
 		img = image;
@@ -237,17 +268,28 @@ class PNGEncoder2 extends EventDispatcher
 		msPerLineIndex = 0;
 		updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
 		updatesPerFrameIndex = 0;
-		targetFPS = 20;
+		targetFPS = 20;		// Default, can be overridden
 		
+		// Note that this effectively freezes the compression level for the
+		// duration of the encoding (even if the static level member changes)
 		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 		
+		// Get notified of new frames, and timer events
 		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
-		timer = new Timer(1);
+		timer = new Timer(1);		// Really means "update as often as possible"
 		timer.addEventListener(TimerEvent.TIMER, onTimer);
 		timer.start();
 		
+		// We write data in chunks (one per update), starting with one
+		// chunk right now in order to gather some statistics up front
+		// to make an informed estimate for the next update's step size.
+		
+		// Note that small images may be entirely encoded in this step,
+		// but we don't dispatch any events until the next update in
+		// order to give the client an opportunity to attach event listeners.
+		
 		if (img.width > 0 && img.height > 0) {
-			// Determine proper step
+			// Determine proper start step
 			var startTime = Lib.getTimer();
 			
 			// Write first ~20K pixels to see how fast it is
@@ -274,10 +316,11 @@ class PNGEncoder2 extends EventDispatcher
 		
 		updates = 0;
 		
-		Memory.select(oldFastMem);
+		Memory.select(oldFastMem);		// Play nice!
 	}
 	
 	
+	// Updates the msPerLine vector with a new measure
 	private inline function updateMsPerLine(ms : Int, lines : Int)
 	{
 		if (lines != 0) {
@@ -291,41 +334,57 @@ class PNGEncoder2 extends EventDispatcher
 		}
 	}
 	
+	// Updates the msPerFrame vector with a new measure
 	private inline function updateMsPerFrame(ms : Int)
 	{
 		msPerFrame[msPerFrameIndex] = ms;
 		msPerFrameIndex = (msPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);		// Cheap modulus
 	}
 	
+	// Updates the updatesPerFrame vector with a new measure
 	private inline function updateUpdatesPerFrame(updates : Int)
 	{
 		updatesPerFrame[updatesPerFrameIndex] = updates;
 		updatesPerFrameIndex = (updatesPerFrameIndex + 1) & (FRAME_AVG_SMOOTH_COUNT - 1);
 	}
 	
+	
+	// Makes an informed estimate of how many scanlines should be processed during
+	// the next update, and sets the "step" member variable to that value
 	private inline function updateStep()
 	{
-		// Data: We have the last FRAME_AVG_SMOOTH_COUNT measurements
-		// of time between frames.
+		// Updates are always executing as fast as possible in order to saturate the
+		// event loop/render cycle (aka the "elastic racetrack": see http://www.craftymind.com/2008/04/18/updated-elastic-racetrack-for-flash-9-and-avm2/)
+		// So, instead of changing the update frequency, we predict the best number of
+		// scanlines to process (the "step") during the next update based on past evidence
+		// of how long it takes to process one scanline. We monitor the FPS to determine
+		// how closely we're approaching the targetFPS, and thus which direction we should
+		// adjust towards. We push against the targetFPS as much as possible in order to
+		// saturate the AVM2's cycle and so minimize idling time and maximize encoding speed).
+		
+		// Data: We have the last FRAME_AVG_SMOOTH_COUNT measurements of various
+		// statistics that we can use to calculate moving averages
 		
 		
 		var avgMsPerFrame = 0.0;
 		var count = 0;
 		
 		for (ms in msPerFrame) {
-			if (ms > 0) {
+			if (ms > 0) {		// Discount measurements of 0 (can happen with imprecise platform timers)
 				avgMsPerFrame += ms;
 				++count;
 			}
 		}
 		
-		if (count != 0) {
+		if (count != 0) {		// Make sure we have sufficient data
 			avgMsPerFrame /= count;
 			
+			// Check our current empirical FPS against the target
+			// (with 15% leeway in favour of a slightly slower FPS)
 			var targetMs = 1000.0 / targetFPS;
 			if (avgMsPerFrame > targetMs * 1.15) {
 				// Too slow, pull back a bit
-				targetMs -= avgMsPerFrame - targetMs;
+				targetMs -= avgMsPerFrame - targetMs;		// Error delta
 			}
 			
 			var avgUpdatesPerFrame = 0.0;
@@ -349,6 +408,10 @@ class PNGEncoder2 extends EventDispatcher
 				}
 				if (count != 0) {
 					avgMsPerLine /= count;
+					
+					// Calculate step; must include at least MIN_PIXELS_PER_FRAME, and must be >= 1
+					// In dimensional analysis, the estimate works out to:
+					//     ? scanlinesPerUpdate = scanlinesPerMs * targetMsPerFrame * framesPerUpdate
 					step = Math.ceil(Math.max(targetMs / avgMsPerLine / avgUpdatesPerFrame, MIN_PIXELS_PER_FRAME / img.width));
 				}
 				else {
@@ -359,7 +422,7 @@ class PNGEncoder2 extends EventDispatcher
 				step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
 			}
 		}
-		else {
+		else {		// Not enough data, just use bare minimum for step
 			step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
 		}
 	}
@@ -393,15 +456,22 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private inline function update()
 	{
+		// Need to check if we've finished or not since it's possible
+		// for the timer event to be dispatched before we stop it, but get
+		// processed after we've finished (e.g. if there's two timer events
+		// in the event queue and the first one finishes the work, the second
+		// will still cause this function to be entered since it was generated
+		// before we stopped the timer).
 		if (!done) {
 			var start = Lib.getTimer();
 			
 			++updates;
 			
+			// Play nice with others, and preserve the domain memory
 			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 			Memory.select(data);
 			
-			// Queue events instead of dispatching them inline
+			// Queue events (dispatched at end) instead of dispatching them inline
 			// because during a call to dispatchEvent *other* pending events
 			// might be dispatched too, possibly resulting in this method being
 			// called again in a re-entrant fashion (which doesn't play nicely
@@ -433,6 +503,9 @@ class PNGEncoder2 extends EventDispatcher
 			
 			Memory.select(oldFastMem);
 			
+			// With `done` stable and domain memory properly set, we can now safely
+			// handle re-entrancy (thank goodness Flash is single threaded or this
+			// would be even more of a nightmare)
 			for (event in queuedEvents) {
 				dispatcher.dispatchEvent(event);
 			}
@@ -440,6 +513,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
+	// Only finalizes the encoding if there's nothing left to encode
 	private inline function finalize(queuedEvents : Vector<Event>)
 	{
 		if (currentY >= img.height) {
@@ -461,6 +535,7 @@ class PNGEncoder2 extends EventDispatcher
 
 	private static inline function writePNGSignature(png : ByteArray)
 	{
+		// See PNG spec for details
 		png.writeUnsignedInt(0x89504e47);
 		png.writeUnsignedInt(0x0D0A1A0A);
 	}
@@ -468,7 +543,7 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private static inline function writeIHDRChunk(img : BitmapData, png : ByteArray)
 	{
-		var chunkLength = 13;
+		var chunkLength = 13;		// 13-byte header
 		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(data);
 		
@@ -499,6 +574,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	// Writes one integer into flash.Memory at the given address, in big-endian order
+	// (domain memory is always little-endian)
 	private static inline function writeI32BE(addr: UInt, value : UInt) : Void
 	{
 		Memory.setByte(addr, value >>> 24);
@@ -545,18 +621,12 @@ class PNGEncoder2 extends EventDispatcher
 		var end8 = (width & 0xFFFFFFF4) - 8;		// Floor to nearest 8, then subtract 8
 		var j;
 		
-		//var startTime = Lib.getTimer();
-		
 		var imgBytes = img.getPixels(region);
 		imgBytes.position = 0;
 		memcpy(imgBytes, scratchAddr);
 		
-		//var endTime = Lib.getTimer();
-		//trace("Blitting pixel data into fast mem took " + (endTime - startTime) + "ms");
-		
-		//startTime = Lib.getTimer();
 		if (img.transparent) {
-			// Do first line separate
+			// Do first line separately
 			Memory.setByte(addr, 1);		// Sub filter
 			addr += 1;
 			
@@ -626,6 +696,7 @@ class PNGEncoder2 extends EventDispatcher
 				}
 			}
 			
+			// Other lines:
 			for (i in 1 ... height) {
 				Memory.setByte(addr, 4);		// Paeth filter
 				addr += 1;
@@ -701,7 +772,7 @@ class PNGEncoder2 extends EventDispatcher
 			}
 		}
 		else {
-			// Do first line separate
+			// Do first line separately
 			Memory.setByte(addr, 1);		// Sub filter
 			addr += 1;
 			
@@ -762,6 +833,7 @@ class PNGEncoder2 extends EventDispatcher
 				}
 			}
 			
+			// Other lines:
 			for (i in 1 ... height) {
 				Memory.setByte(addr, 4);		// Paeth filter
 				addr += 1;
@@ -827,11 +899,6 @@ class PNGEncoder2 extends EventDispatcher
 			}
 		}
 		
-		//endTime = Lib.getTimer();
-		//trace("Copying pixel data into RGBA format with filter took " + (endTime - startTime) + "ms");
-		
-		//var startTime = Lib.getTimer();
-		
 		deflateStream.fastWrite(addrStart, addrStart + length);
 		
 		var lastChunk = endY == img.height;
@@ -841,9 +908,6 @@ class PNGEncoder2 extends EventDispatcher
 		if (!lastChunk) {
 			deflateStream.release();
 		}
-		
-		//var endTime = Lib.getTimer();
-		//trace("Compression took " + (endTime - startTime) + "ms");
 	}
 	
 	
@@ -851,12 +915,13 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		// a = left, b = above, c = upper left
 		var p = a + b - c;        // initial estimate
-		var pa = abs(p - a);      // distances to a, b, c
-		var pb = abs(p - b);
-		var pc = abs(p - c);
+		var pa = abs(p - a),      // distances to a, b, c
+		    pb = abs(p - b),
+		    pc = abs(p - c);
 		
 		// return nearest of a,b,c, breaking ties in order a,b,c.
 		
+		// Jumps replaced with bitwise operations to improve speed
 		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
 		var notACond = ((pb - pa) | (pc - pa)) >> 31;
 		var notBCond = (pc - pb) >> 31;
@@ -877,6 +942,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 
+	// Writes a PNG chunk into the output PNG
 	private static inline function writeChunk(png : ByteArray, type : Int, chunkLength : Int) : Void
 	{
 		var len = chunkLength;
@@ -889,9 +955,10 @@ class PNGEncoder2 extends EventDispatcher
 			png.position += len;
 		}
 		
-		var c : UInt = 0xFFFFFFFF;
+		// Calculate CRC-32 checksum of chunk
+		var c = 0xFFFFFFFF;
 		
-		// Unroll first four iterations from type bytes, rest use chunk data
+		// Unroll first four iterations from type bytes, the rest use chunk data
 		c = crcTable(c ^ (type >>> 24)) ^ (c >>> 8);
 		c = crcTable(c ^ ((type >>> 16) & 0xFF)) ^ (c >>> 8);
 		c = crcTable(c ^ ((type >>> 8) & 0xFF)) ^ (c >>> 8);
@@ -901,6 +968,8 @@ class PNGEncoder2 extends EventDispatcher
 			var i = CHUNK_START;
 			var end = CHUNK_START + len;
 			var end16 = CHUNK_START + (len & 0xFFFFFFF0);	// Floor to nearest 16
+			
+			// Unroll 16 iterations at a time for speed
 			while (i < end16) {
 				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
 				c = crcTable(c ^ Memory.getByte(i + 1)) ^ (c >>> 8);
@@ -920,6 +989,8 @@ class PNGEncoder2 extends EventDispatcher
 				c = crcTable(c ^ Memory.getByte(i + 15)) ^ (c >>> 8);
 				i += 16;
 			}
+			
+			// Do remaining iterations one-by-one
 			while (i < end) {
 				c = crcTable(c ^ Memory.getByte(i)) ^ (c >>> 8);
 				++i;
@@ -931,14 +1002,14 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	
+	// Whether the CRC table has been pre-computed yet
 	private static var crcComputed = false;
 	
+	// Selects the domain memory, and performs any additional static initialization needed
 	private static inline function initialize() : Void
 	{
-		sprite = new Sprite();
-		
 		if (!crcComputed) {
+			sprite = new Sprite();
 			data = new ByteArray();
 			data.length = Std.int(Math.max(CHUNK_START, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		}
@@ -975,7 +1046,8 @@ class PNGEncoder2 extends EventDispatcher
 		}
 	}
 	
-	private static inline function crcTable(index : UInt) : UInt
+	// Looks up an entry in the CRC table given an index
+	private static inline function crcTable(index : Int) : Int
 	{
 		return Memory.getI32((index & 0xFF) << 2);
 	}

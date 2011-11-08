@@ -57,7 +57,7 @@ As such, here is the zlib license in its entirety (from zlib.h):
 
 
 
-// References:
+// Some references:
 // - RFC 1950 (zlib) and 1951 (DEFLATE)
 // - The standard zlib implementation (available from http://zlib.net/)
 // - "An Explanation of the Deflate Algorithm" (http://www.zlib.net/feldspar.html)
@@ -89,6 +89,7 @@ enum CompressionLevel {
 }
 
 
+// Represents an (offset, end) tuple in domain memory
 class MemoryRange {
 	public var offset : Int;
 	public var end : Int;
@@ -109,7 +110,11 @@ class DeflateStream
 {
 	private static inline var MAX_SYMBOLS_IN_TREE = 286;
 	private static inline var LENGTH_CODES = 29;
-	private static inline var MIN_LENGTH = 3;	// Minimum number of repeating symbols to use a length/distance pair
+	
+	// Minimum number of repeating symbols to use a length/distance pair, according to spec.
+	// Note that the actual LZ compression code in this file uses a min length of 4 instead.
+	private static inline var MIN_LENGTH = 3;
+	
 	private static inline var MAX_LENGTH = 258;
 	private static inline var LENGTHS = 256;
 	
@@ -120,27 +125,42 @@ class DeflateStream
 	private static inline var HUFFMAN_SCRATCH_OFFSET : Int = CODE_LENGTH_OFFSET + 19 * 4;
 	private static inline var LENGTH_EXTRA_BITS_OFFSET : Int = HUFFMAN_SCRATCH_OFFSET + MAX_SYMBOLS_IN_TREE * 4;
 	private static inline var DIST_EXTRA_BITS_OFFSET : Int = LENGTH_EXTRA_BITS_OFFSET + (LENGTHS + MIN_LENGTH) * 4;
-	// Next offset: DIST_EXTRA_BITS_OFFSET + 512 * 4
+	// Next offset would be at: DIST_EXTRA_BITS_OFFSET + 512 * 4
 	
+	// FAST compression uses this to decide when to start a new block
 	private static inline var OUTPUT_BYTES_BEFORE_NEW_BLOCK : Int = 48 * 1024;
-	private static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
-	private static inline var ADLER_MAX : Int = 65521;		// Largest prime smaller than 65536
-	private static inline var MAX_CODE_LENGTH : Int = 15;
-	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
-	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
-	private static inline var EOB = 256;		// End of block symbol
-	private static inline var HASH_SIZE_BITS = 16;
-	private static inline var HASH_SIZE = 1 << HASH_SIZE_BITS;		// # of 4-byte slots
-	private static inline var HASH_MASK = HASH_SIZE - 1;
-	private static inline var WINDOW_SIZE = 32768;
 	
-	private var level : CompressionLevel;
-	private var zlib : Bool;
-	private var startAddr : UInt;
-	private var currentAddr : Int;
-	private var scratchAddr : Int;
-	private var blockInProgress : Bool;
-	private var blockStartAddr : Int;
+	// UNCOMPRESSED block sizes must be no more than this many bytes
+	private static inline var MAX_UNCOMPRESSED_BYTES_PER_BLOCK : UInt = 65535;
+	
+	// Largest prime smaller than 65536 (see adler32.c in zlib source)
+	private static inline var ADLER_MAX : Int = 65521;
+	
+	// Symbols (literal bytes, lengths, and the EOB) must be represented using a
+	// Huffman code of no more than this many bits for the longest code
+	private static inline var MAX_CODE_LENGTH : Int = 15;
+	
+	// The code lengths are serialized using a Huffman code, which must have
+	// a code length of no more than this many bits
+	private static inline var MAX_CODE_LENGTH_CODE_LENGTH : Int = 7;
+	
+	// The code lengths are written in a funny order to maximize their compressability
+	private static inline var CODE_LENGTH_ORDER = [ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 ];
+	
+	private static inline var EOB = 256;		// End of block symbol
+	
+	private static inline var HASH_SIZE_BITS = 16;				// Hash used by NORMAL only
+	private static inline var HASH_SIZE = 1 << HASH_SIZE_BITS;	// # of 4-byte slots in hash
+	private static inline var HASH_MASK = HASH_SIZE - 1;		// Used for fast modulus
+	private static inline var WINDOW_SIZE = 32768;				// Distances must be <= this
+	
+	private var level : CompressionLevel;		// The compression level to use
+	private var zlib : Bool;					// Whether to include zlib (RFC 1951) metadata or not
+	private var startAddr : UInt;				// Where to start writing output bytes
+	private var currentAddr : Int;				// Current (byte) position in output buffer
+	private var scratchAddr : Int;				// Location of scratch memory region
+	private var blockInProgress : Bool;			// Whether a block is currently in progress or not
+	private var blockStartAddr : Int;			// The address that the current block started being output at
 	
 	private var literalLengthCodes : Int;		// Count
 	private var distanceCodes : Int;			// Count
@@ -149,6 +169,8 @@ class DeflateStream
 	private var s1 : UInt;
 	private var s2 : UInt;
 	
+	// Output is bit-oriented, not byte-oriented. This keeps track of the number of
+	// bits past the current byte address that the next set of bits should be written to.
 	private var bitOffset : Int;
 	
 	// TODO: Add compression ratio (keep track of bits written vs. bits seen)
@@ -186,11 +208,13 @@ class DeflateStream
 	}
 	
 	
+	// Code in constructors is slow, so delegate initialization to function
 	private function _new(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
 	{
 		fastNew(level, writeZLIBInfo, scratchAddr, startAddr);
 	}
 	
+	// Inline initialization (can yield extra performance boost)
 	private inline function fastNew(level : CompressionLevel, writeZLIBInfo : Bool, scratchAddr : Int, startAddr : Int)
 	{
 		this.level = level;
@@ -390,10 +414,9 @@ class DeflateStream
 	}
 	
 	
+	// Uses Huffman coding only (no LZ77 compression)
 	private inline function _fastWriteFast(offset : Int, end : Int)
 	{
-		//var startTime = Lib.getTimer();
-		
 		// Write data in bytesBeforeBlockCheck byte increments -- this allows
 		// us to efficiently check the current output block size only periodically
 		
@@ -471,12 +494,10 @@ class DeflateStream
 				endBlock();
 			}
 		}
-		
-		//var endTime = Lib.getTimer();
-		//trace("Writing Huffman-encoded data took " + (endTime - startTime) + "ms");
 	}
 	
 	
+	// Uses a quick version of LZ77 compression, and Huffman coding
 	private inline function _fastWriteNormal(offset : Int, end : Int)
 	{
 		var cappedEnd, safeEnd;
@@ -489,6 +510,11 @@ class DeflateStream
 		var hashOffset;
 		var i, j, k;
 		
+		// i: The current index into the input buffer
+		// j: The lookahead index into the input buffer, starting at a hash entry
+		// k: The lookahead index into the input buffer, starting at i
+		
+		
 		// blockInProgress should always be false here
 		
 		
@@ -499,6 +525,15 @@ class DeflateStream
 		// Symbols in the temporary buffer are all two-bytes, and can be literals
 		// or lengths. Lengths are represented by 512 + the actual length value.
 		// Lengths are immediately followed by a two-byte distance (actual value).
+		
+		// The hash holds indexes to the input buffer -- the hash code is calculated
+		// based on the first four bytes at that index. So, to check if a given
+		// string starting with a certain four bytes has been seen before, you
+		// can simply hash the first 4 bytes and look it up in the hash, then find
+		// the match length. Note that collisions are "resolved" just by replacing
+		// the old value with the new one (i.e., no collision resolution). This is
+		// done for speed. The hash is updated for every input byte, except the ones
+		// within a match (however, the first and last bytes of the match are inserted).
 		
 		var hashAddr = currentAddr + _maxOutputBufferSize(end - offset) - HASH_SIZE * 4;
 		var bufferAddr = hashAddr - OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
@@ -533,9 +568,12 @@ class DeflateStream
 			i = offset;
 			while (i < safeEnd) {
 				hashOffset = LZHash.hash4(i, HASH_MASK) << 2;	// Multiply by 4 since each entry is 4 bytes
-				j = Memory.getI32(hashAddr + hashOffset);
+				j = Memory.getI32(hashAddr + hashOffset);		// Index from hash
 				
 				if (j >= 0 && Memory.getI32(j) == Memory.getI32(i)) {
+					// Hash value was valid and first 4 bytes match!
+					// Find length of match
+					
 					length = 4;
 					j += 4;
 					k = i + 4;
@@ -566,7 +604,7 @@ class DeflateStream
 							Memory.setI32(hashAddr + (LZHash.hash4(i - 1, HASH_MASK) << 2), i - 1);
 						}
 					}
-					else {
+					else {		// Match, but distance too far -- output literal
 						symbol = Memory.getByte(i);
 						Memory.setI16(currentBufferAddr, symbol);
 						incSymbolFrequency(symbol);
@@ -588,6 +626,7 @@ class DeflateStream
 				}
 			}
 			
+			// Output remaining literals without hash table
 			while (i < cappedEnd) {
 				symbol = Memory.getByte(i);
 				Memory.setI16(currentBufferAddr, symbol);
@@ -686,7 +725,7 @@ class DeflateStream
 			
 			// Note that if this if (or else if) are not entered, we
 			// cannot call the searchAndUpdate method, but we won't since
-			// the next loop will never be entered
+			// the next two loops will never be entered
 			if (i < maxMatchEnd) {
 				hash.unsafeInitLookahead(offset);
 			}
@@ -1151,12 +1190,14 @@ class DeflateStream
 		bitOffset &= 0x7;		// modulus 8
 	}
 	
+	// Pre-condition: Must be on a contiguous byte boundary
 	private inline function writeByte(byte : Int)
 	{
 		Memory.setByte(currentAddr, byte);
 		++currentAddr;
 	}
 	
+	// Pre-condition: Must be on a contiguous byte boundary
 	private inline function writeShort(num : Int)
 	{
 		Memory.setI16(currentAddr, num);
@@ -1423,38 +1464,43 @@ class DeflateStream
 	private static inline var HASH_BITS = 16;
 	private static inline var HASH_ENTRIES = 1 << HASH_BITS;
 	private static inline var HASH_MASK = HASH_ENTRIES - 1;
-	private static inline var SLOT_SIZE = 1 + 4;
+	private static inline var SLOT_SIZE = 1 + 4;		// One byte for hash depth, 4 for index
 	private static inline var HASH_SIZE = HASH_ENTRIES * SLOT_SIZE;
 	private static inline var MAX_ATTEMPTS = 5;			// Up to this many entries are displaced during update. _update() and fastUpdate() are hardcoded to this value
 	private static inline var MAX_HASH_DEPTH = 8;		// Hash code depends on this value (change that when changing this). Up to this many hashes are performed on different lengths of the input string during searches
 	private static inline var LOOKAHEADS = 1;			// In addition to main search. Do not change; implementation is hardcoded to this value for speed
-	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;
-	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;
+	private static inline var LOOKAHEAD_SIZE = (LOOKAHEADS + 1) * 4;	// Includes LOOKAHEADS cached search results, and the current search result
+	private static inline var LOOKAHEAD_MASK = LOOKAHEAD_SIZE - 1;		// Used for cheap modulus
 	private static inline var HASH_SCRATCH_SIZE = MAX_HASH_DEPTH + (((MAX_HASH_DEPTH - MIN_MATCH_LENGTH - 1) >>> 2) + 1) * 4;	// MAX_HASH_DEPTH + difference rounded to 4
 	private static inline var SCRATCH_SIZE = LOOKAHEAD_SIZE + HASH_SCRATCH_SIZE;
-	private static inline var GOOD_MATCH_LENGTH_THRESHOLD = 4;		// A length of this size more than average is considered sufficient
+	private static inline var GOOD_MATCH_LENGTH_THRESHOLD = 4;		// A length of this size more than average is considered sufficient (and lookaheads will not be performed)
 	
-	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;
+	public static inline var MEMORY_SIZE = HASH_SIZE + SCRATCH_SIZE;	// Total bytes of working memory needed
 	public static inline var MAX_LOOKAHEAD = MAX_HASH_DEPTH + LOOKAHEADS;
 	public static inline var MIN_MATCH_LENGTH = 4;		// Don't change; implementation is hardcoded to this value for speed
 	
 	
-	private var addr : Int;
-	private var baseResultAddr : Int;
-	private var hashScratchAddr : Int;
-	private var maxMatchLength : Int;
-	private var windowSize : Int;
-	private var avgMatchLength : Int;
+	private var addr : Int;		// Address of working memory (hash table is first in that block)
+	private var baseResultAddr : Int;	// Address of search result cache
+	private var hashScratchAddr : Int;	// Address of scratch memory for hash function
+	private var maxMatchLength : Int;	// The maximum match length (inclusive)
+	private var windowSize : Int;		// The maximum gap between the current address and a gap (inclusive)
+	private var avgMatchLength : Int;	// A moving average of match lengths (for matches only)
 	
-	public var resultAddr : Int;
+	public var resultAddr : Int;		// Address of the current result in the search result cache
 	
 	
 	
 	// Memory layout:
-	// HASH_SIZE slots
+	//
+	// HASH_SIZE slots starting at addr.
 	// Each slot list is composed of a 1-byte count indicating the number of
 	// bytes that hash of the index stored at that location was computed with,
-	// followed by a 4-byte pointer back to the original data (index)
+	// followed by a 4-byte pointer back to the original data (index).
+	//
+	// Then, the search result cache (4 bytes per result) at baseResultAddr.
+	//
+	// Then, the hash function's scratch memory at hashScratchAddr.
 	
 	
 	
@@ -1465,7 +1511,7 @@ class DeflateStream
 		this.maxMatchLength = maxMatchLength;
 		this.windowSize = windowSize;
 		
-		avgMatchLength = 12;
+		avgMatchLength = 12;	// Seed; will converge to real average later
 		
 		baseResultAddr = resultAddr = addr + MEMORY_SIZE - SCRATCH_SIZE;
 		hashScratchAddr = baseResultAddr + LOOKAHEAD_SIZE;
@@ -1482,7 +1528,7 @@ class DeflateStream
 	{
 		var hashOffset;
 		
-		//for (_ in 0 ... LOOKAHEADS) {
+		//for (_ in 0 ... LOOKAHEADS) {		// Unrolled
 		hashOffset = calcHashOffset(hash4(i, HASH_MASK));
 		_search(i, hashOffset, cap);
 		_update(i, hashOffset);
@@ -1492,13 +1538,15 @@ class DeflateStream
 	}
 	
 	
-	// Like regular initLookahead, but only call when i + MAX_LOOKEAHEADS + maxMatchLen + 1 < cap
+	// Like regular initLookahead, but only call when i + MAX_LOOKEAHEADS + maxMatchLen + 1 < cap.
+	// Technically, only LOOKAHEADS is needed (not MAX_LOOKAHEADS), but MAX_LOOKAHEADS is guaranteed
+	// to be at least as large
 	public inline function unsafeInitLookahead(i : Int)
 	{
 		var hashOffset;
 		
 		
-		//for (_ in 0 ... LOOKAHEADS) {
+		//for (_ in 0 ... LOOKAHEADS) {		// Unrolled
 		hashOffset = calcHashOffset(hash4(i, HASH_MASK));
 		_unsafeSearch(i, hashOffset);
 		_update(i, hashOffset);
@@ -1541,14 +1589,17 @@ class DeflateStream
 	
 	// Searches the hash for the best match of bytes starting at i, and also updates the hash
 	// for future searches. A 32-bit ((distance << 16) | length) pair is written to memory at
-	// resultAddr; Length portion will be < MIN_MATCH_LENGTH if no match was found
+	// resultAddr; Length portion will be < MIN_MATCH_LENGTH if no match was found.
+	// i must be < cap - MAX_LOOKEAHEADS
 	public inline function searchAndUpdate(i : Int, cap : Int)
 	{
 		var length;
 		
 		
-		// Calculate next result for lookahead cache
+		// Calculate next result for lookahead cache (LOOKAHEAD steps ahead of current search)
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
+		
+		// If current match is sufficiently long, don't bother with lookeahead
 		if (Memory.getUI16(nextResultAddr(resultAddr)) < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 			_search(i + LOOKAHEADS, hashOffset, cap);
 		}
@@ -1571,8 +1622,9 @@ class DeflateStream
 				Memory.setI32(resultAddr, 0);	// Defer to better length coming up
 			}
 			else if (i + length + MAX_LOOKAHEAD < cap) {
-				// Found match
-				
+				// Found match.
+				// In the interest of speed, only update the hash with the bytes
+				// within the match if the match length is small
 				if (length < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 					// Update hash with every byte inside match
 					for (k in i + LOOKAHEADS + 1 ... i + length) {
@@ -1595,6 +1647,8 @@ class DeflateStream
 		
 		// Calculate next result for lookahead cache
 		var hashOffset = calcHashOffset(hash4(i + LOOKAHEADS, HASH_MASK));
+		
+		// If current match is sufficiently long, don't bother with lookeahead
 		if (Memory.getUI16(nextResultAddr(resultAddr)) < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 			_unsafeSearch(i + LOOKAHEADS, hashOffset);
 		}
@@ -1620,6 +1674,8 @@ class DeflateStream
 				// Set average match length to the average of its current value and this value (weighted 6 to 2 in favour of current average)
 				avgMatchLength = ((avgMatchLength << 1) + (avgMatchLength << 2) + (length << 1)) >>> 3;
 				
+				// In the interest of speed, only update the hash with the bytes
+				// within the match if the match length is small
 				if (length < avgMatchLength + GOOD_MATCH_LENGTH_THRESHOLD) {
 					// Update hash with every byte inside match
 					for (k in i + LOOKAHEADS + 1 ... i + length) {
@@ -1643,10 +1699,13 @@ class DeflateStream
 		var length;
 		var j, k;
 		
+		// Search for matches in the hash table at each possible hash depth; select
+		// the longest (and favour the closest in case of ties)
+		
 		// Match length might exceed cap; add checks to ensure this does not happen
 		
 		j = Memory.getI32(hashOffset + 1);		// Ignore hash depth of entry, want only index
-			
+		
 		// Do first iteration separately from main loop -- special case since
 		// we have the offset precalculated, and know any match is the best so far
 		if (j >= 0 && Memory.getI32(i) == Memory.getI32(j) && i - j <= windowSize) {
@@ -1695,7 +1754,8 @@ class DeflateStream
 				
 				// Check if this match is longer than another.
 				// We don't care about equal lengths, since the distance is necessarily
-				// greater the larger the hash depth we're looking at
+				// greater the larger the hash depth we're looking at (older entries have
+				// greater hash depths than newer ones)
 				if (length > longestLength) {
 					longestLength = length;
 					longestEndPosition = j;
@@ -1714,6 +1774,9 @@ class DeflateStream
 		var longestEndPosition = -1;	// The index of the end of the longest match in the input string
 		var length;
 		var j, k;
+		
+		// Search for matches in the hash table at each possible hash depth; select
+		// the longest (and favour the closest in case of ties)
 		
 		// No need to check if going past cap when finding match length (most common case)
 		
@@ -1768,7 +1831,8 @@ class DeflateStream
 				
 				// Check if this match is longer than another.
 				// We don't care about equal lengths, since the distance is necessarily
-				// greater the larger the hash depth we're looking at
+				// greater the larger the hash depth we're looking at (older entries have
+				// greater hash depths than newer ones)
 				if (length > longestLength) {
 					longestLength = length;
 					longestEndPosition = j;
@@ -1799,12 +1863,21 @@ class DeflateStream
 		// Uses progressive hashing
 		// see http://fastcompression.blogspot.com/2011/10/progressive-hash-series-new-method-to.html
 		
+		// Basically, we insert the index at its 4-byte hash index. If there's a collision,
+		// we:
+		// 1. Store the data that's in that hash slot already
+		// 2. Overwrite the hash slot with our new data
+		// 3. Take the old entry from step 1 and hash it on the next m+1 bytes
+		//    (we store the number of bytes that a hash was calculated on)
+		// 4. Repeat, up to MAX_ATTEMPTS times, or until the desired slot is free,
+		//    or has a hash depth that is too large (i.e. is less usable and too old)
+		
 		var hashDepth = MIN_MATCH_LENGTH;
 		var index = i;		// Index to be inserted
 		var nextDepth;
 		var nextIndex;
 		
-		// Loop (unrolled for speed) while a collision exists
+		// Loop while a collision exists (unrolled for speed), up to MAX_ATTEMPTS attempts
 		if (
 			(nextDepth = Memory.getByte(hashOffset)) < MAX_HASH_DEPTH &&
 			nextDepth >= 0
@@ -1862,13 +1935,13 @@ class DeflateStream
 			}
 		}
 		
-		// Update hash (counts as attempt)
+		// Update hash (counts as an attempt)
 		Memory.setByte(hashOffset, hashDepth);
 		Memory.setI32(hashOffset + 1, index);
 	}
 	
 	
-	// Like update(), but resolves collisions brutally in the interest of speed
+	// Like update(), but resolves collisions more brutally in the interest of speed
 	private inline function fastUpdate(i : Int)
 	{
 		var hashDepth = MIN_MATCH_LENGTH;
@@ -1936,9 +2009,6 @@ class DeflateStream
 		// Update hash
 		Memory.setByte(hashOffset, hashDepth);
 		Memory.setI32(hashOffset + 1, index);
-		
-		
-		//update(i);
 	}
 	
 	
@@ -1971,6 +2041,11 @@ class DeflateStream
 	{
 		// MurmurHash3
 		// Adapted from http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+		
+		// Instead of doing a true variable length hash (which requires a slow
+		// loop), always do a hash on MAX_HASH_DEPTH bytes, but set the non-relevant
+		// bytes to 0 (so two hashes on different data will be the same if their first
+		// len bytes are the same, as expected)
 		
 		// Put MAX_HASH_DEPTH bytes in buffer
 		Memory.setI32(hashScratchAddr, Memory.getI32(addr));
@@ -2165,7 +2240,7 @@ class DeflateStream
 	
 	private static inline function sortByWeightNonDecreasing(offset, end)
 	{
-		// TODO: Change to O(nlgn) or O(n) sort (it's measurably slow)
+		// TODO: Change to O(nlgn) or O(n) sort (it's just slow enough to be measurable)
 		
 		// Insertion sort
 		var i, j;
