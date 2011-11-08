@@ -124,10 +124,10 @@ class PNGEncoder2 extends EventDispatcher
 }
 
 
-// The actual implementation of all PNG functionality (heavily refactored
-// and improved from the HaXe port of the original AS3 version -- new features
-// include fast performance, 24- and 32-bit PNG support, the Paeth filter,
-// and asynchronous encoding)
+// The actual implementation of all PNG functionality (completely refactored
+// improved (by Cameron) from the HaXe port of the original AS3 version --
+// new features include fast performance, 24- and 32-bit PNG support, the
+// Paeth filter, and adaptive asynchronous encoding)
 @:protected private class PNGEncoder2Impl
 {
 	// Domain memory (aka "fast memory") layout:
