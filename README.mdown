@@ -1,3 +1,44 @@
+Overview
+========
+
+This is the quick-start guide to my PNGEncoder2, which compresses BitmapData objects into
+PNG files (stored in ByteArray objects). For a more in-depth
+explanation check out my [blog post][blog].
+
+Features
+========
+
+- **Blazing fast performance**: Written in [haXe][haxe] and highly
+tuned for speed, it can outperform the [as3corelib PNGEncoder][encoder] by up
+to 10x (on the FAST setting)! This is made possible by the **custom DEFLATE
+library** I wrote from scratch specifically for this encoder.
+
+- **Compression options**: Also made possible by my custom DEFLATE implementation,
+you can now choose between compression levels: FAST, NORMAL, and GOOD (and
+UNCOMPRESSED, but...)
+
+- **True asynchronous encoding**: Most other asynchronous PNG encoders
+do the conversion from bitmap data to PNG data asynchronously, then
+call ByteArray.compress() at the end -- which is a long, synchronous operation
+that can take half the total encoding time or more. (An exception is the
+[In-Spirit PNG encoder][in-spirit], but its asynchronous mode is amazingly slow,
+and the SWC weighs in at over 100KB.) Mine does completely smooth encoding,
+asynchronously (with progress events!) and scales to a target FPS without
+wasting any cycles idling
+
+- **Large image support**: Can compress ridiculously large images on-the-fly,
+since it does the work in manageable chunks (when done asynchonously) instead
+of all at once
+
+- **Opaque bitmap support**: If your BitmapData is not transparent, then it will
+be automatically encoded using the (generally smaller) 24-bit PNG format, otherwise the 32-bit
+format is used
+
+- **Open source**: Use the haXe classes if you have a haXe project, or build
+against an SWC if you have an AS3 project. See the licenses at the top of [PNGEncoder2.hx][PNGEncoder2.hx]
+and [DeflateStream.hx][DeflateStream.hx] (both have separate, but similarly permissive, licenses).
+
+
 Usage
 =====
 
@@ -9,7 +50,7 @@ Synchronous example:
 
 ```as3
 var bmp : BitmapData = ...;		// The bitmap you want to encode
-var png : ByteArray;
+var png : ByteArray;			// Variable to store the result
 
 PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
 
@@ -21,7 +62,7 @@ Asynchronous example:
 ```as3
 var bmp : BitmapData = ...;		// The bitmap you want to encode
 
-PNGEncoder2.level = CompressionLevel.FAST	// Optional. Defaults to FAST
+PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
 
 var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp);
 encoder.targetFPS = 12;		// Optional. Defaults to 20. Lower FPSs yield faster compression
@@ -66,9 +107,9 @@ To link an SWC in other versions of the Flash IDE, follow
 
 ### HaXe
 
-If you're using HaXe, it's much simpler to use the source
-directly than to fiddle with SWCs. All you need is the
-"PNGEncoder2.hx" and "DeflateStream.hx" files available
+If you're using haXe, it's much simpler to use the source
+directly than to fiddle with SWCs. All you need are the
+[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files available
 at the [GitHub repository][repo].
 
 If you want to have only one compression method compiled
@@ -77,7 +118,13 @@ If you want to have only one compression method compiled
 (this is equivalent to using the slim SWC versions).
 
 
+[blog]: http://moodycamel.com/blog/2011/a-better-png-encoder-for-flash
+[haxe]: http://haxe.org/
+[encoder]: https://github.com/mikechambers/as3corelib/blob/master/src/com/adobe/images/PNGEncoder.as
+[in-spirit]: http://blog.inspirit.ru/?p=378
 [swc]: https://github.com/cameron314/PNGEncoder2/raw/master/PNGEncoder2.swc
 [how-to-swc]: http://www.myflashlab.com/2010/01/17/how-to-use-swc/
 [slim]: https://github.com/cameron314/PNGEncoder2/tree/master/slim
 [repo]: https://github.com/cameron314/PNGEncoder2
+[PNGEncoder2.hx]: https://github.com/cameron314/PNGEncoder2/blob/master/PNGEncoder2.hx
+[DeflateStream.hx]: https://github.com/cameron314/PNGEncoder2/blob/master/DeflateStream.hx
