@@ -56,6 +56,15 @@ As such, here is the zlib license in its entirety (from zlib.h):
 
 
 
+// This is a zlib/deflate implementation (from scratch!) that was
+// created for use by PNGEncoder2, but should be fairly general
+// purpose (the API is a bit ungainly though, mostly for
+// performance reasons (e.g. no input buffering, assumes
+// it's the one using flash.Memory (apart from the client), etc.).
+// Tied rather inextricably to the Flash 10+ target (though most
+// of the code would port easily to another language that provides
+// fast access to raw chunks of memory, like C or C++).
+
 
 // Some references:
 // - RFC 1950 (zlib) and 1951 (DEFLATE)
