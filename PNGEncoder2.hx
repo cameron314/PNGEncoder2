@@ -207,7 +207,13 @@ class PNGEncoder2 extends EventDispatcher
 		
 		if (level == null) {
 			// Use default if no level explicitly specified
+#if (FAST_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 			level = FAST;
+#elseif NORMAL_ONLY
+			level = NORMAL;
+#elseif GOOD_ONLY
+			level = GOOD;
+#end
 		}
 		
 		// Data will be select()ed for use with fast memory

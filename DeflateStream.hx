@@ -92,9 +92,18 @@ import flash.utils.Endian;
 
 enum CompressionLevel {
 	UNCOMPRESSED;		// Fastest
+#if !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY)
 	FAST;				// Huffman coding only
 	NORMAL;				// Huffman + fast LZ77 compression
 	GOOD;				// Huffman + good LZ77 compression
+
+#elseif FAST_ONLY
+	FAST;
+#elseif NORMAL_ONLY
+	NORMAL;
+#elseif GOOD_ONLY
+	GOOD;
+#end
 }
 
 
@@ -408,6 +417,7 @@ class DeflateStream
 			updateAdler32(offset, end);
 		}
 		
+#if !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY)
 		if (level == FAST) {
 			_fastWriteFast(offset, end);
 		}
@@ -417,12 +427,26 @@ class DeflateStream
 		else if (level == GOOD) {
 			_fastWriteGood(offset, end);
 		}
+#elseif FAST_ONLY
+		if (level == FAST) {
+			_fastWriteFast(offset, end);
+		}
+#elseif NORMAL_ONLY
+		if (level == NORMAL) {
+			_fastWriteNormal(offset, end);
+		}
+#elseif GOOD_ONLY
+		if (level == GOOD) {
+			_fastWriteGood(offset, end);
+		}
+#end
 		else {
 			throw new Error("Compression level not supported");
 		}
 	}
 	
 	
+#if (FAST_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 	// Uses Huffman coding only (no LZ77 compression)
 	private inline function _fastWriteFast(offset : Int, end : Int)
 	{
@@ -504,8 +528,10 @@ class DeflateStream
 			}
 		}
 	}
+#end
 	
 	
+#if (NORMAL_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 	// Uses a quick version of LZ77 compression, and Huffman coding
 	private inline function _fastWriteNormal(offset : Int, end : Int)
 	{
@@ -696,8 +722,10 @@ class DeflateStream
 			offset = cappedEnd;
 		}
 	}
+#end
 	
 	
+#if (GOOD_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 	private inline function _fastWriteGood(offset : Int, end : Int)
 	{
 		var cappedEnd, maxMatchEnd, lookaheadEnd;
@@ -854,8 +882,10 @@ class DeflateStream
 			offset = cappedEnd;
 		}
 	}
+#end
 	
 	
+#if !FAST_ONLY
 	private inline function writeTemporaryBufferSymbol(i : Int) : Int
 	{
 		var length, distance, lengthInfo, distanceInfo;
@@ -879,6 +909,7 @@ class DeflateStream
 		
 		return symbol;
 	}
+#end
 	
 	
 	private inline function beginBlock(lastBlock = false)
@@ -982,19 +1013,33 @@ class DeflateStream
 			blockCount = Math.ceil(inputByteCount / MAX_UNCOMPRESSED_BYTES_PER_BLOCK);
 		}
 		else {
-			if (level == FAST) {
+			if (
+#if (FAST_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
+				level == FAST
+#else
+				false
+#end
+			) {
 				// Worst case:
 				blockCount = Math.ceil(inputByteCount * 2 / OUTPUT_BYTES_BEFORE_NEW_BLOCK);
 			}
 			else {
 				blockCount = Math.ceil(inputByteCount / (OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2));
 				
-				if (level == NORMAL) {
+				if (
+#if (NORMAL_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
+					level == NORMAL
+#else
+					false
+#end
+				) {
 					extraScratch = HASH_SIZE * 4 + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
 				}
+#if (GOOD_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 				else if (level == GOOD) {
 					extraScratch = LZHash.MEMORY_SIZE + OUTPUT_BYTES_BEFORE_NEW_BLOCK * 2 * 2;
 				}
+#end
 			}
 			
 			// Using Huffman compression with max 15 bits can't possibly
@@ -1044,7 +1089,14 @@ class DeflateStream
 	
 	private inline function setupStaticScratchMem()
 	{
-		if (level == NORMAL || level == GOOD) {
+#if !FAST_ONLY
+		if (
+#if !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY)
+			level == NORMAL || level == GOOD
+#else
+			true
+#end
+		) {
 			// Write length code, extra bits and lower bound that must be subtracted to
 			// get the extra bits value for all the possible lengths.
 			// This information is stuffed into 4 bytes per length, addressable
@@ -1128,15 +1180,18 @@ class DeflateStream
 				}
 			}
 		}
+#end
 	}
 	
 	
+#if !FAST_ONLY
 	private inline function getDistanceInfo(distance : Int)
 	{
 		return Memory.getI32(scratchAddr + DIST_EXTRA_BITS_OFFSET +
 			((distance <= 256 ? distance : 256 + ((distance - 1) >>> 7)) << 2)
 		);
 	}
+#end
 	
 	
 	private function createAndWriteHuffmanTrees(offset : Int, end : Int)
@@ -1299,6 +1354,7 @@ class DeflateStream
 	{
 		var n = 0;
 		
+#if (FAST_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 		if (level == FAST) {
 			n = 257;		// 256 literals plus EOB
 			
@@ -1369,7 +1425,19 @@ class DeflateStream
 				++i;
 			}
 		}
-		else if (level == NORMAL || level == GOOD) {
+#if !FAST_ONLY
+		else
+#end
+#end
+
+#if !FAST_ONLY
+		if (
+#if !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY)
+			level == NORMAL || level == GOOD
+#else
+			true
+#end
+		) {
 			n = 257;		// Must include all symbols up to EOB
 			
 			// Find last non-zero weight (all symbols up to that point will have to be included)
@@ -1389,6 +1457,7 @@ class DeflateStream
 				}
 			}
 		}
+#end
 		
 		
 		HuffmanTree.weightedAlphabetToCodes(scratchAddr, scratchAddr + n * 4, MAX_CODE_LENGTH);
@@ -1397,6 +1466,7 @@ class DeflateStream
 	}
 	
 	
+#if !FAST_ONLY
 	// Resets all symbol frequencies (literal, EOB, length, distance) to 0
 	private inline function clearSymbolFrequencies()
 	{
@@ -1414,14 +1484,21 @@ class DeflateStream
 		var addr = scratchAddr + scratchOffset + (symbol << 2);
 		Memory.setI32(addr, Memory.getI32(addr) + 1);
 	}
-	
+#end
 	
 	private inline function createDistanceTree(offset : Int, end : Int)
 	{
 		var scratchOffset = scratchAddr + DISTANCE_OFFSET;
 		var n = 0;
 		
-		if (level == NORMAL || level == GOOD) {
+#if !FAST_ONLY
+		if (
+#if !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY)
+			level == NORMAL || level == GOOD
+#else
+			true
+#end
+		) {
 			// Find last non-zero weight (all symbols up to that point will have to be included)
 			for (symbol in 0 ... 30) {
 				if (Memory.getI32(scratchOffset + symbol * 4) > 0) {
@@ -1429,6 +1506,7 @@ class DeflateStream
 				}
 			}
 		}
+#end
 		
 		HuffmanTree.weightedAlphabetToCodes(scratchOffset, scratchOffset + n * 4, MAX_CODE_LENGTH);
 		
@@ -1470,6 +1548,7 @@ class DeflateStream
 
 @:protected private class LZHash
 {
+#if (GOOD_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 	private static inline var HASH_BITS = 16;
 	private static inline var HASH_ENTRIES = 1 << HASH_BITS;
 	private static inline var HASH_MASK = HASH_ENTRIES - 1;
@@ -2021,7 +2100,14 @@ class DeflateStream
 	}
 	
 	
+	private inline function calcHashOffset(hash : Int)
+	{
+		return addr + hash * SLOT_SIZE;
+	}
+#end
 	
+	
+#if !FAST_ONLY
 	// Returns the index into a hash table for the first 4 bytes
 	// starting at addr
 	public static inline function hash4(addr : Int, mask : Int)
@@ -2043,8 +2129,10 @@ class DeflateStream
 		// Finalization
 		return murmur_fmix(h1 ^ 4) & mask;
 	}
-	
-	
+#end
+
+
+#if (GOOD_ONLY || !(FAST_ONLY || NORMAL_ONLY || GOOD_ONLY))
 	// Reads up to MAX_HASH_DEPTH bytes ahead (but only hashes on the next len of them)
 	public inline function hash(addr : Int, len : Int, mask : Int)
 	{
@@ -2102,7 +2190,9 @@ class DeflateStream
 		// Finalization
 		return murmur_fmix(h1 ^ len) & mask;
 	}
-	
+#end
+
+#if !FAST_ONLY
 	private static inline function murmur_fmix(h : Int)
 	{	
 		h ^= h >>> 16;
@@ -2111,12 +2201,7 @@ class DeflateStream
 		h *= 0xc2b2ae35;
 		return h ^ (h >>> 16);
 	}
-	
-	
-	private inline function calcHashOffset(hash : Int)
-	{
-		return addr + hash * SLOT_SIZE;
-	}
+#end
 }
 
 
