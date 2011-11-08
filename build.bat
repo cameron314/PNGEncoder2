@@ -22,4 +22,4 @@ copy /Y PNGEncoder2.swc slim\PNGEncoder2_good.swc >nul
 echo Building full version...
 haxe PNGEncoder2.hxml
 
-pause
+rem pause
