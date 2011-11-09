@@ -122,7 +122,7 @@ If you want to have only one compression method compiled
 [haxe]: http://haxe.org/
 [encoder]: https://github.com/mikechambers/as3corelib/blob/master/src/com/adobe/images/PNGEncoder.as
 [in-spirit]: http://blog.inspirit.ru/?p=378
-[swc]: https://github.com/cameron314/PNGEncoder2/raw/master/PNGEncoder2.swc
+[swc]: https://github.com/downloads/cameron314/PNGEncoder2/PNGEncoder2.swc
 [how-to-swc]: http://www.myflashlab.com/2010/01/17/how-to-use-swc/
 [slim]: https://github.com/cameron314/PNGEncoder2/tree/master/slim
 [repo]: https://github.com/cameron314/PNGEncoder2
