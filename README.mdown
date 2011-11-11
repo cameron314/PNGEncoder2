@@ -81,6 +81,8 @@ encoder.addEventListener(Event.COMPLETE, function (e) {
 Installation
 ============
 
+Note that this library **requires Flash 10 or higher**.
+
 ### ActionScript 3
 
 If you're using ActionScript 3 you can simply
