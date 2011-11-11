@@ -10,7 +10,7 @@ Features
 
 - **Blazing fast performance**: Written in [haXe][haxe] and highly
 tuned for speed, it can outperform the [as3corelib PNGEncoder][encoder] by up
-to 10x (on the FAST setting)! This is made possible by the **custom DEFLATE
+to 5x (on the FAST setting)! This is made possible by the **custom DEFLATE
 library** I wrote from scratch specifically for this encoder.
 
 - **Compression options**: Also made possible by my custom DEFLATE implementation,
