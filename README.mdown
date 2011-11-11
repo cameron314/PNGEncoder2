@@ -42,11 +42,10 @@ and [DeflateStream.hx][DeflateStream.hx] (both have separate, but similarly perm
 Usage
 =====
 
-PNGEncoder2 supports both synchronous (fast but freezes the UI)
-and asynchronous PNG encoding (a little slower, but can maintain
-a target FPS).
+PNGEncoder2 supports both synchronous (fast but freezes the UI while it encodes)
+and asynchronous PNG encoding (a smidgeon slower, but can maintain a target FPS).
 
-#### Synchronous example:
+### Synchronous example:
 
 ```as3
 var bmp : BitmapData = ...;		// The bitmap you want to encode
@@ -57,7 +56,7 @@ PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
 png = PNGEncoder2.encode(bmp);
 ```
 	
-#### Asynchronous example:
+### Asynchronous example:
 
 ```as3
 var bmp : BitmapData = ...;		// The bitmap you want to encode
