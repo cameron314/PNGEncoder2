@@ -1,9 +1,9 @@
 Overview
 ========
 
-This is the quick-start guide to my PNGEncoder2, which compresses BitmapData objects into
+This is the quick-start guide to my PNGEncoder2 library, which compresses BitmapData objects into
 PNG files (stored in ByteArray objects). For a more in-depth
-explanation check out my [blog post][blog].
+explanation of how it works check out my [blog post][blog] about it.
 
 Features
 ========
@@ -15,24 +15,24 @@ library** I wrote from scratch specifically for this encoder.
 
 - **Compression options**: Also made possible by my custom DEFLATE implementation,
 you can now choose between compression levels: FAST, NORMAL, and GOOD (and
-UNCOMPRESSED, but...)
+UNCOMPRESSED too, but...).
 
 - **True asynchronous encoding**: Most other asynchronous PNG encoders
 do the conversion from bitmap data to PNG data asynchronously, then
 call ByteArray.compress() at the end -- which is a long, synchronous operation
-that can take half the total encoding time or more. (An exception is the
+that can take half the total encoding time or more. (An exception is the cool
 [In-Spirit PNG encoder][in-spirit], but its asynchronous mode is amazingly slow,
 and the SWC weighs in at over 100KB.) Mine does completely smooth encoding,
 asynchronously (with progress events!) and scales to a target FPS without
-wasting any cycles idling
+wasting any cycles idling.
 
 - **Large image support**: Can compress ridiculously large images on-the-fly,
-since it does the work in manageable chunks (when done asynchonously) instead
-of all at once
+since it does the work in manageable chunks (when done asynchronously) instead
+of all at once. There is no single-step bottleneck.
 
 - **Opaque bitmap support**: If your BitmapData is not transparent, then it will
 be automatically encoded using the (generally smaller) 24-bit PNG format, otherwise the 32-bit
-format is used
+format is used.
 
 - **Open source**: Use the haXe classes if you have a haXe project, or build
 against an SWC if you have an AS3 project. See the licenses at the top of [PNGEncoder2.hx][PNGEncoder2.hx]
@@ -46,7 +46,7 @@ PNGEncoder2 supports both synchronous (fast but freezes the UI)
 and asynchronous PNG encoding (a little slower, but can maintain
 a target FPS).
 
-Synchronous example:
+#### Synchronous example:
 
 ```as3
 var bmp : BitmapData = ...;		// The bitmap you want to encode
@@ -57,7 +57,7 @@ PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
 png = PNGEncoder2.encode(bmp);
 ```
 	
-Asynchronous example:
+#### Asynchronous example:
 
 ```as3
 var bmp : BitmapData = ...;		// The bitmap you want to encode
@@ -88,7 +88,8 @@ If you're using ActionScript 3 you can simply
 [download the SWC][swc] file and link it to your
 project. There are also ["slim" versions][slim] of the library
 that contain only a single compression method each;
-these are recommended for production since they are smaller.
+these are recommended for production since they are smaller (assuming you
+only use one compression level).
 
 To link an SWC into a project made with
 the Flash CS5.5 IDE, the steps are as follows:
