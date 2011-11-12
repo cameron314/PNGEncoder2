@@ -120,7 +120,6 @@ If you want to have only one compression method compiled
 (this is equivalent to using the slim SWC versions).
 
 
-
 [blog]: http://moodycamel.com/blog/2011/a-better-png-encoder-for-flash
 [haxe]: http://haxe.org/
 [encoder]: https://github.com/mikechambers/as3corelib/blob/master/src/com/adobe/images/PNGEncoder.as
