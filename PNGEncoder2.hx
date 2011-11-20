@@ -141,7 +141,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
 	
 	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Number of frames to calculate averages from. Must be power of 2
-	private static inline var MIN_PIXELS_PER_FRAME = 20 * 1024;		// Always compress at least this many pixels per chunk
+	private static inline var MIN_PIXELS_PER_UPDATE = 20 * 1024;		// Always compress at least this many pixels per chunk
 	private static var data : ByteArray;	// The select()ed working memory
 	private static var sprite : Sprite;		// Used purely to listen to ENTER_FRAME events
 	private static var encoding = false;	// Keeps track of global state, to ensure only one PNG can be encoded at once
@@ -418,18 +418,18 @@ class PNGEncoder2 extends EventDispatcher
 					// Calculate step; must include at least MIN_PIXELS_PER_FRAME, and must be >= 1
 					// In dimensional analysis, the estimate works out to:
 					//     ? scanlinesPerUpdate = scanlinesPerMs * targetMsPerFrame * framesPerUpdate
-					step = Math.ceil(Math.max(targetMs / avgMsPerLine / avgUpdatesPerFrame, MIN_PIXELS_PER_FRAME / img.width));
+					step = Math.ceil(Math.max(targetMs / avgMsPerLine / avgUpdatesPerFrame, MIN_PIXELS_PER_UPDATE / img.width));
 				}
 				else {
-					step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
+					step = Math.ceil(MIN_PIXELS_PER_UPDATE / img.width);
 				}
 			}
 			else {
-				step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
+				step = Math.ceil(MIN_PIXELS_PER_UPDATE / img.width);
 			}
 		}
 		else {		// Not enough data, just use bare minimum for step
-			step = Math.ceil(MIN_PIXELS_PER_FRAME / img.width);
+			step = Math.ceil(MIN_PIXELS_PER_UPDATE / img.width);
 		}
 	}
 	
