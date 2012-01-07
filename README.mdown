@@ -83,7 +83,7 @@ Installation
 
 Note that this library **requires Flash 10 or higher**. Unfortunately, until
 Adobe decides what they're doing with the next version of Alchemy, this library
-[won't work in any SWF compiled to target Flash player 11.2 or above][dead-alchemy]
+[won't work in any SWF compiled to target Flash player 11.2 (SWF-version 13) or above][dead-alchemy]
 (but if you target lower versions, it will still *run* in Flash player 11.2+).
 
 ### ActionScript 3
