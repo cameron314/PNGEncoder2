@@ -234,20 +234,14 @@ class Test extends Sprite
 			times.push(stop - start);
 		}
 		
-		if (runs == 1) {
-			return times[0];
-		}
-		
-		// Sum times, and find the largest time (will be excluded)
-		var largest = 0;
-		var total = 0;
+		// Use smallest time as benchmark result
+		var smallest = times[0];
 		for (time in times) {
-			total += time;
-			if (time > largest) {
-				largest = time;
+			if (time < smallest) {
+				smallest = time;
 			}
 		}
 		
-		return Std.int((total - largest) / (runs - 1));
+		return smallest;
 	}
 }
