@@ -299,7 +299,7 @@ class PNGEncoder2 extends EventDispatcher
 			var startTime = Lib.getTimer();
 			
 			// Write first ~20K pixels to see how fast it is
-			var height = Std.int(Math.min(20 * 1024 / img.width, img.height));
+			var height = Math.ceil(Math.min(20 * 1024 / img.width, img.height));
 			writeIDATChunk(img, 0, height, deflateStream, png);
 			
 			var endTime = Lib.getTimer();

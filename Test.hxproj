@@ -1,16 +1,14 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<project version="2">
+<project>
   <!-- Output SWF options -->
   <output>
-    <movie outputType="Application" />
+    <movie disabled="False" />
     <movie input="" />
     <movie path="Test.swf" />
     <movie fps="30" />
     <movie width="640" />
     <movie height="480" />
     <movie version="10" />
-    <movie minorVersion="0" />
-    <movie platform="Flash Player" />
     <movie background="#FFFFFF" />
   </output>
   <!-- Other classes to be compiled into your SWF -->
@@ -23,7 +21,7 @@
     <option flashStrict="False" />
     <option mainClass="Test" />
     <option enabledebug="True" />
-    <option additional="" />
+    <option additional="-swf-version 11" />
   </build>
   <!-- haxelib libraries -->
   <haxelib>
@@ -50,6 +48,4 @@
     <option showHiddenPaths="False" />
     <option testMovie="Default" />
   </options>
-  <!-- Plugin storage -->
-  <storage />
 </project>
