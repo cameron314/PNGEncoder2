@@ -598,8 +598,10 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline function _writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
 	{
 		var width = img.width;
+		var bufferedStartY = startY == 0 ? 0 : startY - 1;	// To give access to previous row
 		var height = endY - startY;
-		var region = new Rectangle(0, startY, width, height);
+		var bufferedHeight = endY - bufferedStartY;
+		var region = new Rectangle(0, startY, width, bufferedHeight);
 		
 		var widthBy4 = width << 2;
 		
@@ -609,7 +611,7 @@ class PNGEncoder2 extends EventDispatcher
 		var length : UInt = width * height * bytesPerPixel + height;
 		
 		// Size needed to store byte array of bitmap
-		var scratchSize : UInt = width * height * 4;
+		var scratchSize : UInt = width * bufferedHeight * 4;
 		
 		// Memory layout:
 		// DEFLATE_SCRATCH: Deflate stream scratch memory
@@ -631,79 +633,85 @@ class PNGEncoder2 extends EventDispatcher
 		imgBytes.position = 0;
 		memcpy(imgBytes, scratchAddr);
 		
+		if (bufferedStartY != startY) {
+			scratchAddr += width * 4;
+		}
+		
 		if (img.transparent) {
-			// Do first line separately
-			Memory.setByte(addr, 1);		// Sub filter
-			addr += 1;
-			
-			if (width > 0 && height > 0) {
-				// Do first pixel (4 bytes) manually (sub formula is different)
-				Memory.setI32(addr, Memory.getI32(scratchAddr) >>> 8);
-				Memory.setByte(addr + 3, Memory.getByte(scratchAddr));
-				addr += 4;
-				scratchAddr += 4;
+			if (bufferedStartY == startY) {
+				// Do first line of image separately (no row above)
+				Memory.setByte(addr, 1);		// Sub filter
+				addr += 1;
 				
-				// Copy line, moving alpha byte to end, and applying filter
-				j = 1;
-				while (j < end8) {
-					Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
-					Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr - 4));
-					
-					Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 5) - Memory.getByte(scratchAddr + 1));
-					Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 6) - Memory.getByte(scratchAddr + 2));
-					Memory.setByte(addr + 6, Memory.getByte(scratchAddr + 7) - Memory.getByte(scratchAddr + 3));
-					Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 4) - Memory.getByte(scratchAddr    ));
-					
-					Memory.setByte(addr +  8, Memory.getByte(scratchAddr +  9) - Memory.getByte(scratchAddr + 5));
-					Memory.setByte(addr +  9, Memory.getByte(scratchAddr + 10) - Memory.getByte(scratchAddr + 6));
-					Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 11) - Memory.getByte(scratchAddr + 7));
-					Memory.setByte(addr + 11, Memory.getByte(scratchAddr +  8) - Memory.getByte(scratchAddr + 4));
-					
-					Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 13) - Memory.getByte(scratchAddr +  9));
-					Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 14) - Memory.getByte(scratchAddr + 10));
-					Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 15) - Memory.getByte(scratchAddr + 11));
-					Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 12) - Memory.getByte(scratchAddr +  8));
-					
-					Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 17) - Memory.getByte(scratchAddr + 13));
-					Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 18) - Memory.getByte(scratchAddr + 14));
-					Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 19) - Memory.getByte(scratchAddr + 15));
-					Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 16) - Memory.getByte(scratchAddr + 12));
-					
-					Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 21) - Memory.getByte(scratchAddr + 17));
-					Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 22) - Memory.getByte(scratchAddr + 18));
-					Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 23) - Memory.getByte(scratchAddr + 19));
-					Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 20) - Memory.getByte(scratchAddr + 16));
-					
-					Memory.setByte(addr + 24, Memory.getByte(scratchAddr + 25) - Memory.getByte(scratchAddr + 21));
-					Memory.setByte(addr + 25, Memory.getByte(scratchAddr + 26) - Memory.getByte(scratchAddr + 22));
-					Memory.setByte(addr + 26, Memory.getByte(scratchAddr + 27) - Memory.getByte(scratchAddr + 23));
-					Memory.setByte(addr + 27, Memory.getByte(scratchAddr + 24) - Memory.getByte(scratchAddr + 20));
-					
-					Memory.setByte(addr + 28, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
-					Memory.setByte(addr + 29, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
-					Memory.setByte(addr + 30, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
-					Memory.setByte(addr + 31, Memory.getByte(scratchAddr + 28) - Memory.getByte(scratchAddr + 24));
-					
-					
-					addr += 32;
-					scratchAddr += 32;
-					j += 8;
-				}
-				while (j < width) {
-					Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
-					Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr - 4));
+				if (width > 0 && height > 0) {
+					// Do first pixel (4 bytes) manually (sub formula is different)
+					Memory.setI32(addr, Memory.getI32(scratchAddr) >>> 8);
+					Memory.setByte(addr + 3, Memory.getByte(scratchAddr));
 					addr += 4;
 					scratchAddr += 4;
-					++j;
+					
+					// Copy line, moving alpha byte to end, and applying filter
+					j = 1;
+					while (j < end8) {
+						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
+						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
+						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+						Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr - 4));
+						
+						Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 5) - Memory.getByte(scratchAddr + 1));
+						Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 6) - Memory.getByte(scratchAddr + 2));
+						Memory.setByte(addr + 6, Memory.getByte(scratchAddr + 7) - Memory.getByte(scratchAddr + 3));
+						Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 4) - Memory.getByte(scratchAddr    ));
+						
+						Memory.setByte(addr +  8, Memory.getByte(scratchAddr +  9) - Memory.getByte(scratchAddr + 5));
+						Memory.setByte(addr +  9, Memory.getByte(scratchAddr + 10) - Memory.getByte(scratchAddr + 6));
+						Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 11) - Memory.getByte(scratchAddr + 7));
+						Memory.setByte(addr + 11, Memory.getByte(scratchAddr +  8) - Memory.getByte(scratchAddr + 4));
+						
+						Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 13) - Memory.getByte(scratchAddr +  9));
+						Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 14) - Memory.getByte(scratchAddr + 10));
+						Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 15) - Memory.getByte(scratchAddr + 11));
+						Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 12) - Memory.getByte(scratchAddr +  8));
+						
+						Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 17) - Memory.getByte(scratchAddr + 13));
+						Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 18) - Memory.getByte(scratchAddr + 14));
+						Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 19) - Memory.getByte(scratchAddr + 15));
+						Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 16) - Memory.getByte(scratchAddr + 12));
+						
+						Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 21) - Memory.getByte(scratchAddr + 17));
+						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 22) - Memory.getByte(scratchAddr + 18));
+						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 23) - Memory.getByte(scratchAddr + 19));
+						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 20) - Memory.getByte(scratchAddr + 16));
+						
+						Memory.setByte(addr + 24, Memory.getByte(scratchAddr + 25) - Memory.getByte(scratchAddr + 21));
+						Memory.setByte(addr + 25, Memory.getByte(scratchAddr + 26) - Memory.getByte(scratchAddr + 22));
+						Memory.setByte(addr + 26, Memory.getByte(scratchAddr + 27) - Memory.getByte(scratchAddr + 23));
+						Memory.setByte(addr + 27, Memory.getByte(scratchAddr + 24) - Memory.getByte(scratchAddr + 20));
+						
+						Memory.setByte(addr + 28, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
+						Memory.setByte(addr + 29, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
+						Memory.setByte(addr + 30, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
+						Memory.setByte(addr + 31, Memory.getByte(scratchAddr + 28) - Memory.getByte(scratchAddr + 24));
+						
+						
+						addr += 32;
+						scratchAddr += 32;
+						j += 8;
+					}
+					while (j < width) {
+						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
+						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
+						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+						Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr - 4));
+						addr += 4;
+						scratchAddr += 4;
+						++j;
+					}
 				}
 			}
 			
 			// Other lines:
-			for (i in 1 ... height) {
+			for (i in 1 ... bufferedHeight) {
 				Memory.setByte(addr, 4);		// Paeth filter
 				addr += 1;
 				
@@ -778,69 +786,71 @@ class PNGEncoder2 extends EventDispatcher
 			}
 		}
 		else {
-			// Do first line separately
-			Memory.setByte(addr, 1);		// Sub filter
-			addr += 1;
-			
-			if (width > 0 && height > 0) {
-				// Do first pixel (3 bytes) manually (sub formula is different)
-				Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
-				Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
-				Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
-				addr += 3;
-				scratchAddr += 4;
+			if (bufferedStartY == startY) {
+				// Do first line of image separately (no row above)
+				Memory.setByte(addr, 1);		// Sub filter
+				addr += 1;
 				
-				// Copy line
-				j = 1;
-				while (j < end8) {
-					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
-					
-					Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 5) - Memory.getByte(scratchAddr + 1));
-					Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 6) - Memory.getByte(scratchAddr + 2));
-					Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 7) - Memory.getByte(scratchAddr + 3));
-					
-					Memory.setByte(addr + 6, Memory.getByte(scratchAddr +  9) - Memory.getByte(scratchAddr + 5));
-					Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 10) - Memory.getByte(scratchAddr + 6));
-					Memory.setByte(addr + 8, Memory.getByte(scratchAddr + 11) - Memory.getByte(scratchAddr + 7));
-					
-					Memory.setByte(addr +  9, Memory.getByte(scratchAddr + 13) - Memory.getByte(scratchAddr +  9));
-					Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 14) - Memory.getByte(scratchAddr + 10));
-					Memory.setByte(addr + 11, Memory.getByte(scratchAddr + 15) - Memory.getByte(scratchAddr + 11));
-					
-					Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 17) - Memory.getByte(scratchAddr + 13));
-					Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 18) - Memory.getByte(scratchAddr + 14));
-					Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 19) - Memory.getByte(scratchAddr + 15));
-					
-					Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 21) - Memory.getByte(scratchAddr + 17));
-					Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 22) - Memory.getByte(scratchAddr + 18));
-					Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 23) - Memory.getByte(scratchAddr + 19));
-					
-					Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 25) - Memory.getByte(scratchAddr + 21));
-					Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 26) - Memory.getByte(scratchAddr + 22));
-					Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 27) - Memory.getByte(scratchAddr + 23));
-					
-					Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
-					Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
-					Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
-					
-					addr += 24;
-					scratchAddr += 32;
-					j += 8;
-				}
-				while (j < width) {
-					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+				if (width > 0 && height > 0) {
+					// Do first pixel (3 bytes) manually (sub formula is different)
+					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
+					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
+					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
 					addr += 3;
 					scratchAddr += 4;
-					++j;
+					
+					// Copy line
+					j = 1;
+					while (j < end8) {
+						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
+						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
+						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+						
+						Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 5) - Memory.getByte(scratchAddr + 1));
+						Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 6) - Memory.getByte(scratchAddr + 2));
+						Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 7) - Memory.getByte(scratchAddr + 3));
+						
+						Memory.setByte(addr + 6, Memory.getByte(scratchAddr +  9) - Memory.getByte(scratchAddr + 5));
+						Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 10) - Memory.getByte(scratchAddr + 6));
+						Memory.setByte(addr + 8, Memory.getByte(scratchAddr + 11) - Memory.getByte(scratchAddr + 7));
+						
+						Memory.setByte(addr +  9, Memory.getByte(scratchAddr + 13) - Memory.getByte(scratchAddr +  9));
+						Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 14) - Memory.getByte(scratchAddr + 10));
+						Memory.setByte(addr + 11, Memory.getByte(scratchAddr + 15) - Memory.getByte(scratchAddr + 11));
+						
+						Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 17) - Memory.getByte(scratchAddr + 13));
+						Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 18) - Memory.getByte(scratchAddr + 14));
+						Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 19) - Memory.getByte(scratchAddr + 15));
+						
+						Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 21) - Memory.getByte(scratchAddr + 17));
+						Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 22) - Memory.getByte(scratchAddr + 18));
+						Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 23) - Memory.getByte(scratchAddr + 19));
+						
+						Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 25) - Memory.getByte(scratchAddr + 21));
+						Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 26) - Memory.getByte(scratchAddr + 22));
+						Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 27) - Memory.getByte(scratchAddr + 23));
+						
+						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
+						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
+						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
+						
+						addr += 24;
+						scratchAddr += 32;
+						j += 8;
+					}
+					while (j < width) {
+						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
+						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
+						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+						addr += 3;
+						scratchAddr += 4;
+						++j;
+					}
 				}
 			}
 			
 			// Other lines:
-			for (i in 1 ... height) {
+			for (i in 1 ... bufferedHeight) {
 				Memory.setByte(addr, 4);		// Paeth filter
 				addr += 1;
 				
