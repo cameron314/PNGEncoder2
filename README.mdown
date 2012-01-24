@@ -81,7 +81,10 @@ encoder.addEventListener(Event.COMPLETE, function (e) {
 Installation
 ============
 
-Note that this library **requires Flash 10 or higher**.
+Note that this library **requires Flash 10 or higher**. Unfortunately, until
+Adobe decides what they're doing with the next version of Alchemy, this library
+[won't work in any SWF compiled to target Flash player 11 (SWF version 13) or above][dead-alchemy]
+(as of Flash Player 11.2). So, you can target Flash 10 (SWF versions 10-12) only for now.
 
 ### ActionScript 3
 
@@ -131,3 +134,4 @@ If you want to have only one compression method compiled
 [repo]: https://github.com/cameron314/PNGEncoder2
 [PNGEncoder2.hx]: https://github.com/cameron314/PNGEncoder2/blob/master/PNGEncoder2.hx
 [DeflateStream.hx]: https://github.com/cameron314/PNGEncoder2/blob/master/DeflateStream.hx
+[dead-alchemy]: http://blogs.adobe.com/flashplayer/2011/09/updates-from-the-lab.html
