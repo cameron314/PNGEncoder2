@@ -50,6 +50,7 @@ import flash.system.ApplicationDomain;
 import flash.system.System;
 import flash.utils.ByteArray;
 import flash.utils.Endian;
+import flash.utils.IDataOutput;
 import flash.utils.Timer;
 import flash.Vector;
 import DeflateStream;
@@ -63,11 +64,6 @@ class PNGEncoder2 extends EventDispatcher
 	private var __impl : PNGEncoder2Impl;
 	
 	public static var level : CompressionLevel;
-	
-	// Provide both HaXe and AS3 properties to access the PNG result for reading
-	@:protected private inline function getPng() return __impl.png
-	@:protected public var png(getPng, null) : ByteArray;
-	@:getter(png) private function flGetPng() return getPng()
 	
 	// Provide both HaXe and AS3 properties to access the target FPS (read/write)
 	@:protected private inline function getTargetFPS() return __impl.targetFPS
@@ -88,10 +84,10 @@ class PNGEncoder2 extends EventDispatcher
 	 * @return a ByteArray representing the PNG encoded image data.
 	 * @playerversion Flash 10
 	 */
-	public static function encode(image : BitmapData) : ByteArray
+	public static function encode(image : BitmapData, outPng : IDataOutput) : Void
 	{
 		PNGEncoder2Impl.level = level;
-		return PNGEncoder2Impl.encode(image);
+		PNGEncoder2Impl.encode(image, outPng);
 	}
 	
 	
@@ -108,18 +104,18 @@ class PNGEncoder2 extends EventDispatcher
 	 * property to access the encoded data once the COMPLETE event has fired.
 	 * @playerversion Flash 10
 	 */
-	public static function encodeAsync(image : BitmapData) : PNGEncoder2
+	public static function encodeAsync(image : BitmapData, outPng : IDataOutput) : PNGEncoder2
 	{
-		return new PNGEncoder2(image);
+		return new PNGEncoder2(image, outPng);
 	}
 	
 	
-	private inline function new(image : BitmapData)
+	private inline function new(image : BitmapData, outPng : IDataOutput)
 	{
 		super();
 		
 		PNGEncoder2Impl.level = level;
-		__impl = new PNGEncoder2Impl(image, this);
+		__impl = new PNGEncoder2Impl(image, outPng, this);
 	}
 }
 
@@ -152,7 +148,7 @@ class PNGEncoder2 extends EventDispatcher
 	//
 	// Asynchronous encoder member variables:
 	//
-	public var png : ByteArray;		// The resulting PNG output for the asynchronous encoder
+	public var png : IDataOutput;	// Where the resulting PNG data is written for the asynchronous encoder
 	public var targetFPS : Int;		// The desired number of frames-per-second during asynchronous encoding (will attempt to achieve this)
 	
 	private var img : BitmapData;	// The input image
@@ -173,13 +169,13 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private var frameCount : Int;					// Total number of frames that have elapsed so far during the encoding
 	
-	public static inline function encode(img : BitmapData) : ByteArray
+	public static inline function encode(img : BitmapData, png : IDataOutput) : Void
 	{
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
-		var png = beginEncoding(img);
+		beginEncoding(img, png);
 		
 		// Initialize stream for IDAT chunks
 		var deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
@@ -189,10 +185,9 @@ class PNGEncoder2 extends EventDispatcher
 		endEncoding(png);
 		
 		Memory.select(oldFastMem);
-		return png;
 	}
 	
-	private static inline function beginEncoding(img : BitmapData) : ByteArray
+	private static inline function beginEncoding(img : BitmapData, png : IDataOutput)
 	{
 		if (encoding) {
 			throw new Error("Only one PNG can be encoded at once");
@@ -200,6 +195,10 @@ class PNGEncoder2 extends EventDispatcher
 			// This limitation is in place to make the implementation simpler;
 			// there is only one domain memory chunk across all PNG encoding
 			// (because it contains cached values like the CRC table).
+		}
+		
+		if (png == ApplicationDomain.currentDomain.domainMemory) {
+			throw new Error("Cannot use domain memory as PNG output");
 		}
 		
 		encoding = true;
@@ -222,39 +221,32 @@ class PNGEncoder2 extends EventDispatcher
 		
 		initialize();		// Sets up data var & CRC table
 		
-		// Create output byte array
-		var png:ByteArray = new ByteArray();
-		
 		writePNGSignature(png);
 		
 		writeIHDRChunk(img, png);
-		
-		return png;
 	}
 	
 	
-	private static inline function endEncoding(png : ByteArray)
+	private static inline function endEncoding(png : IDataOutput)
 	{
 		writeIENDChunk(png);
 		
 		encoding = false;
-		
-		png.position = 0;
 	}
 	
 	
 	
-	public inline function new(image : BitmapData, dispatcher : IEventDispatcher)
+	public inline function new(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher)
 	{
-		_new(image, dispatcher);		// Constructors are slow -- delegate to function
+		_new(image, png, dispatcher);		// Constructors are slow -- delegate to function
 	}
 	
-	private function _new(image : BitmapData, dispatcher : IEventDispatcher)
+	private function _new(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher)
 	{
-		fastNew(image, dispatcher);
+		fastNew(image, png, dispatcher);
 	}
 	
-	private inline function fastNew(image : BitmapData, dispatcher : IEventDispatcher)
+	private inline function fastNew(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher)
 	{
 		lastFrameStart = Lib.getTimer();
 		
@@ -263,7 +255,8 @@ class PNGEncoder2 extends EventDispatcher
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
 		img = image;
-		png = beginEncoding(img);
+		this.png = png;
+		beginEncoding(img, png);
 		currentY = 0;
 		frameCount = 0;
 		done = false;
@@ -539,7 +532,7 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 
-	private static inline function writePNGSignature(png : ByteArray)
+	private static inline function writePNGSignature(png : IDataOutput)
 	{
 		// See PNG spec for details
 		png.writeUnsignedInt(0x89504e47);
@@ -547,7 +540,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	private static inline function writeIHDRChunk(img : BitmapData, png : ByteArray)
+	private static inline function writeIHDRChunk(img : BitmapData, png : IDataOutput)
 	{
 		var chunkLength = 13;		// 13-byte header
 		data.length = Std.int(Math.max(CHUNK_START + chunkLength, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
@@ -590,12 +583,12 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	private static function writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
+	private static function writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : IDataOutput)
 	{
 		_writeIDATChunk(img, startY, endY, deflateStream, png);
 	}
 	
-	private static inline function _writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : ByteArray)
+	private static inline function _writeIDATChunk(img : BitmapData, startY : Int, endY : Int, deflateStream: DeflateStream, png : IDataOutput)
 	{
 		var width = img.width;
 		var bufferedStartY = startY == 0 ? 0 : startY - 1;	// To give access to previous row
@@ -952,14 +945,14 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
-	private static inline function writeIENDChunk(png : ByteArray)
+	private static inline function writeIENDChunk(png : IDataOutput)
 	{
 		writeChunk(png, 0x49454E44, 0);
 	}
 	
 
 	// Writes a PNG chunk into the output PNG
-	private static inline function writeChunk(png : ByteArray, type : Int, chunkLength : Int) : Void
+	private static inline function writeChunk(png : IDataOutput, type : Int, chunkLength : Int) : Void
 	{
 		var len = chunkLength;
 		
@@ -967,8 +960,7 @@ class PNGEncoder2 extends EventDispatcher
 		png.writeUnsignedInt(type);
 		if (len != 0) {
 			data.position = CHUNK_START;
-			data.readBytes(png, png.position, chunkLength);
-			png.position += len;
+			png.writeBytes(data, CHUNK_START, chunkLength);
 		}
 		
 		// Calculate CRC-32 checksum of chunk
