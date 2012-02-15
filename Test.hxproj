@@ -6,8 +6,8 @@
     <movie input="" />
     <movie path="Test.swf" />
     <movie fps="30" />
-    <movie width="640" />
-    <movie height="480" />
+    <movie width="800" />
+    <movie height="600" />
     <movie version="10" />
     <movie background="#FFFFFF" />
   </output>
