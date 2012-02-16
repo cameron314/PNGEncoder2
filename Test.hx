@@ -104,7 +104,7 @@ class Test extends Sprite
 	{
 		// Warm up
 		var data1 = PNGEncoder.encode(bmp);
-		var data2 = PNGEncoder2.encode(bmp);
+		var data2 = new ByteArray(); PNGEncoder2.encode(bmp, data2);
 		
 		var loader = new Loader();
 		/*loader.addEventListener(IOErrorEvent.IO_ERROR, function (e) {
@@ -114,7 +114,7 @@ class Test extends Sprite
 		var that = this;
 		doubleClickEnabled = true;
 		addEventListener(MouseEvent.DOUBLE_CLICK, function (e) {
-			//*
+			///*
 			var fileReference = new FileReference();
 			fileReference.save(data2, "test_png.png");
 			//*/
@@ -131,14 +131,17 @@ class Test extends Sprite
 					var bmp = new BitmapData(Std.int(loader.width), Std.int(loader.height), true, 0x00FFFFFF);
 					bmp.draw(loader);
 					
-					var encoder = PNGEncoder2.encodeAsync(bmp);
+					var png = new ByteArray();
+					var encoder = PNGEncoder2.encodeAsync(bmp, png);
 					var startTime = Lib.getTimer();
 					encoder.addEventListener(Event.COMPLETE, function (e) {
-						var percent = 100 - encoder.png.length / (bmp.width * bmp.height * 4) * 100;
+						var percent = 100 - png.length / (bmp.width * bmp.height * 4) * 100;
 						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
+						png.position = 0;
+						
 						var loader = new Loader();
-						loader.loadBytes(encoder.png);
+						loader.loadBytes(png);
 						that.addChild(loader);
 						loader.x = 250;
 						loader.y = 250;
@@ -146,7 +149,7 @@ class Test extends Sprite
 						that.doubleClickEnabled = true;
 						that.addEventListener(MouseEvent.DOUBLE_CLICK, function (e2) {
 							var fileReference = new FileReference();
-							fileReference.save(encoder.png, "image.png");
+							fileReference.save(png, "image.png");
 						});
 					});
 				});
@@ -159,7 +162,7 @@ class Test extends Sprite
 			*/
 		});
 		
-		//*
+		///*
 		loader.loadBytes(data2);
 		loader.x = MARGIN + bmp.width + 10;
 		loader.y = 250;
@@ -184,7 +187,7 @@ class Test extends Sprite
 	
 	private static function testPNGEncoder(bmp : BitmapData, runs : Int) : Int
 	{
-		return time(callback(PNGEncoder.encode, bmp), runs);
+		return time(function() { PNGEncoder.encode(bmp); }, runs);
 	}
 	
 	private static function round(num : Float, decimalPlaces : Int) : Float
@@ -219,11 +222,11 @@ class Test extends Sprite
 	
 	private static function testOptimizedPNGEncoder(bmp : BitmapData, runs : Int) : Int
 	{
-		return time(callback(PNGEncoder2.encode, bmp), runs);
+		return time(function() { PNGEncoder2.encode(bmp, new ByteArray()); } , runs);
 	}
 	
 	
-	private static function time(func : Void -> Dynamic, runs : Int) : Int
+	private static function time(func : Void -> Void, runs : Int) : Int
 	{
 		var times = [  ];
 		
