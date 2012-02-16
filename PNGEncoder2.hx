@@ -601,7 +601,7 @@ class PNGEncoder2 extends EventDispatcher
 		var bufferedStartY = startY == 0 ? 0 : startY - 1;	// To give access to previous row
 		var height = endY - startY;
 		var bufferedHeight = endY - bufferedStartY;
-		var region = new Rectangle(0, startY, width, bufferedHeight);
+		var region = new Rectangle(0, bufferedStartY, width, bufferedHeight);
 		
 		var widthBy4 = width << 2;
 		
