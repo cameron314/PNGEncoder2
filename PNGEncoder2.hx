@@ -145,6 +145,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static var data : ByteArray;	// The select()ed working memory
 	private static var sprite : Sprite;		// Used purely to listen to ENTER_FRAME events
 	private static var encoding = false;	// Keeps track of global state, to ensure only one PNG can be encoded at once
+	private static var region : Rectangle;	// Re-used rectangle for async update function (avoids per-frame allocation)
 	
 	// FAST compression level is default
 	public static var level : CompressionLevel;
@@ -187,6 +188,8 @@ class PNGEncoder2 extends EventDispatcher
 		writeIDATChunk(img, 0, img.height, deflateStream, png);
 		
 		endEncoding(png);
+		
+		deflateStream = null;		// Just in case this helps the garbage collector...
 		
 		Memory.select(oldFastMem);
 		return png;
@@ -482,15 +485,16 @@ class PNGEncoder2 extends EventDispatcher
 			// might be dispatched too, possibly resulting in this method being
 			// called again in a re-entrant fashion (which doesn't play nicely
 			// with storing/retrieving oldFastMem).
-			var queuedEvents = new Vector<Event>();
+			var progressEvent : ProgressEvent = null;
+			var completeEvent : Event = null;
 			
 			var bytesPerPixel = img.transparent ? 4 : 3;
 			var totalBytes = bytesPerPixel * img.width * img.height;
 			
 			if (currentY >= img.height) {
 				// Finished encoding the entire image in the initial setup
-				queuedEvents.push(new ProgressEvent(ProgressEvent.PROGRESS, false, false, totalBytes, totalBytes));
-				finalize(queuedEvents);
+				progressEvent = new ProgressEvent(ProgressEvent.PROGRESS, false, false, totalBytes, totalBytes);
+				completeEvent = finalize();
 			}
 			else {
 				var next = Std.int(Math.min(currentY + step, img.height));
@@ -499,9 +503,8 @@ class PNGEncoder2 extends EventDispatcher
 				
 				var currentBytes = bytesPerPixel * img.width * currentY;
 				
-				queuedEvents.push(new ProgressEvent(ProgressEvent.PROGRESS, false, false, currentBytes, totalBytes));
-				
-				finalize(queuedEvents);
+				progressEvent = new ProgressEvent(ProgressEvent.PROGRESS, false, false, currentBytes, totalBytes);
+				completeEvent = finalize();
 				
 				updateMsPerLine(Lib.getTimer() - start, step);
 				updateStep();
@@ -512,16 +515,33 @@ class PNGEncoder2 extends EventDispatcher
 			// With `done` stable and domain memory properly set, we can now safely
 			// handle re-entrancy (thank goodness Flash is single threaded or this
 			// would be even more of a nightmare)
-			for (event in queuedEvents) {
-				dispatcher.dispatchEvent(event);
+			if (progressEvent != null) {
+				dispatcher.dispatchEvent(progressEvent);
+				progressEvent = null;
+			}
+			if (completeEvent != null) {
+				dispatcher.dispatchEvent(completeEvent);
+				completeEvent = null;
+			}
+			
+			if (done) {
+				// Clear some references to give the garbage collector an easier time
+				dispatcher = null;		// This removes a circular reference, which might save a mark-and-sweep step
+				timer = null;
+				img = null;
+				deflateStream = null;
+				msPerFrame = null;
+				msPerLine = null;
+				updatesPerFrame = null;
 			}
 		}
 	}
 	
 	
 	// Only finalizes the encoding if there's nothing left to encode
-	private inline function finalize(queuedEvents : Vector<Event>)
+	private inline function finalize() : Event
 	{
+		var result : Event = null;
 		if (currentY >= img.height) {
 			done = true;
 			
@@ -531,10 +551,11 @@ class PNGEncoder2 extends EventDispatcher
 			
 			endEncoding(png);
 			
-			queuedEvents.push(new Event(Event.COMPLETE));
+			result = new Event(Event.COMPLETE);
 			
 			//trace("Async completed over " + frameCount + " frame(s)");
 		}
+		return result;
 	}
 	
 	
@@ -601,7 +622,9 @@ class PNGEncoder2 extends EventDispatcher
 		var bufferedStartY = startY == 0 ? 0 : startY - 1;	// To give access to previous row
 		var height = endY - startY;
 		var bufferedHeight = endY - bufferedStartY;
-		var region = new Rectangle(0, bufferedStartY, width, bufferedHeight);
+		region.y = bufferedStartY;
+		region.width = width;
+		region.height = bufferedHeight;
 		
 		var widthBy4 = width << 2;
 		
@@ -1025,6 +1048,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline function initialize() : Void
 	{
 		if (!crcComputed) {
+			region = new Rectangle(0, 0, 1, 1);
 			sprite = new Sprite();
 			data = new ByteArray();
 			data.length = Std.int(Math.max(CHUNK_START, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
