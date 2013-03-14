@@ -2,7 +2,7 @@
    Copyright (c) 2011, Cameron Desrochers
    All rights reserved.
    
-	   Permission is hereby granted, free of charge, to any person obtaining a copy
+	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
 	in the Software without restriction, including without limitation the rights
 	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
@@ -179,6 +179,7 @@ class DeflateStream
 	private var scratchAddr : Int;				// Location of scratch memory region
 	private var blockInProgress : Bool;			// Whether a block is currently in progress or not
 	private var blockStartAddr : Int;			// The address that the current block started being output at
+	private var rangeResult : MemoryRange;		// Used when returning a memory range to external clients (avoids spurious small-object allocations)
 	
 	private var literalLengthCodes : Int;		// Count
 	private var distanceCodes : Int;			// Count
@@ -240,6 +241,8 @@ class DeflateStream
 		this.scratchAddr = scratchAddr;
 		this.startAddr = startAddr;
 		this.currentAddr = startAddr;
+		
+		rangeResult = new MemoryRange(0, 0);
 		
 		HuffmanTree.scratchAddr = scratchAddr + HUFFMAN_SCRATCH_OFFSET;
 		
@@ -317,10 +320,14 @@ class DeflateStream
 	
 	
 	// Returns a memory range for the currently written data in the output buffer.
-	// Guaranteed to always start at the original startAddr passed to createEx
+	// Guaranteed to always start at the original startAddr passed to createEx.
+	// Note that the range object returned is owned by the instance, and may change
+	// after future method calls (but is guaranteed to stay the same until then).
 	public function peek() : MemoryRange
 	{
-		return new MemoryRange(startAddr, currentAddr);
+		rangeResult.offset = startAddr;
+		rangeResult.end = currentAddr;
+		return rangeResult;
 	}
 	
 	
@@ -987,7 +994,9 @@ class DeflateStream
 			writeByte(s1);
 		}
 		
-		return new MemoryRange(startAddr, currentAddr);
+		rangeResult.offset = startAddr;
+		rangeResult.end = currentAddr;
+		return rangeResult;
 	}
 	
 	
