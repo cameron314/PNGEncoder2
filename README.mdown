@@ -32,7 +32,8 @@ of all at once. There is no single-step bottleneck.
 
 - **Opaque bitmap support**: If your BitmapData is not transparent, then it will
 be automatically encoded using the (generally smaller) 24-bit PNG format, otherwise the 32-bit
-format is used.
+format is used. (Note that transparency is detected via the `transparent` property of the
+BitmapData object, and not by scanning every pixel, which would be too slow.)
 
 - **Open source**: Use the haXe classes if you have a haXe project, or build
 against an SWC if you have an AS3 project. See the licenses at the top of [PNGEncoder2.hx][PNGEncoder2.hx]
@@ -115,8 +116,8 @@ To link an SWC in other versions of the Flash IDE, follow
 If you're using haXe, just use the source
 directly instead of fiddling with SWCs (actually, your project won't compile if you use the SWC).
 All you need are the
-[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files available
-at the [GitHub repository][repo].
+[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files. Note that this
+project was built for haXe 2; I haven't tested it under the new haXe 3 compiler.
 
 If you want to have only one compression method compiled
 (to cut down on generated code size), add `-D FAST_ONLY`,
@@ -128,10 +129,9 @@ If you want to have only one compression method compiled
 [haxe]: http://haxe.org/
 [encoder]: https://github.com/mikechambers/as3corelib/blob/master/src/com/adobe/images/PNGEncoder.as
 [in-spirit]: http://blog.inspirit.ru/?p=378
-[swc]: https://github.com/downloads/cameron314/PNGEncoder2/PNGEncoder2.swc
+[swc]: https://github.com/cameron314/PNGEncoder2/raw/master/PNGEncoder2.swc
 [how-to-swc]: http://www.myflashlab.com/2010/01/17/how-to-use-swc/
 [slim]: https://github.com/cameron314/PNGEncoder2/tree/master/slim
-[repo]: https://github.com/cameron314/PNGEncoder2
 [PNGEncoder2.hx]: https://github.com/cameron314/PNGEncoder2/blob/master/PNGEncoder2.hx
 [DeflateStream.hx]: https://github.com/cameron314/PNGEncoder2/blob/master/DeflateStream.hx
 [dead-alchemy]: http://blogs.adobe.com/flashplayer/2011/09/updates-from-the-lab.html
