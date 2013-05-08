@@ -147,6 +147,8 @@ class PNGEncoder2 extends EventDispatcher
 	private static var encoding = false;	// Keeps track of global state, to ensure only one PNG can be encoded at once
 	private static var region : Rectangle;	// Re-used rectangle for async update function (avoids per-frame allocation)
 	
+	private static var pendingAsyncEncodings : Vector<PNGEncoder2Impl> = new Vector<PNGEncoder2Impl>();
+	
 	// FAST compression level is default
 	public static var level : CompressionLevel;
 	
@@ -174,6 +176,7 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private var frameCount : Int;					// Total number of frames that have elapsed so far during the encoding
 	
+	
 	public static inline function encode(img : BitmapData) : ByteArray
 	{
 		// Save current domain memory and restore it after, to avoid
@@ -198,7 +201,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline function beginEncoding(img : BitmapData) : ByteArray
 	{
 		if (encoding) {
-			throw new Error("Only one PNG can be encoded at once");
+			throw new Error("Only one PNG can be encoded at once (are you encoding asynchronously while attempting to encode another PNG synchronously?)");
 			
 			// This limitation is in place to make the implementation simpler;
 			// there is only one domain memory chunk across all PNG encoding
@@ -259,73 +262,80 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private inline function fastNew(image : BitmapData, dispatcher : IEventDispatcher)
 	{
-		lastFrameStart = Lib.getTimer();
-		
-		// Preserve current domain memory so that we can leave it as we found
-		// it once we've finished using it
-		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
-		
 		img = image;
-		png = beginEncoding(img);
-		currentY = 0;
-		frameCount = 0;
-		done = false;
 		this.dispatcher = dispatcher;
-		msPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
-		msPerFrameIndex = 0;
-		msPerLine = new Vector<Float>(FRAME_AVG_SMOOTH_COUNT, true);
-		msPerLineIndex = 0;
-		updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
-		updatesPerFrameIndex = 0;
-		targetFPS = 20;		// Default, can be overridden
 		
-		// Note that this effectively freezes the compression level for the
-		// duration of the encoding (even if the static level member changes)
-		deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
-		
-		// Get notified of new frames, and timer events
-		sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
-		timer = new Timer(1);		// Really means "update as often as possible"
-		timer.addEventListener(TimerEvent.TIMER, onTimer);
-		timer.start();
-		
-		// We write data in chunks (one per update), starting with one
-		// chunk right now in order to gather some statistics up front
-		// to make an informed estimate for the next update's step size.
-		
-		// Note that small images may be entirely encoded in this step,
-		// but we don't dispatch any events until the next update in
-		// order to give the client an opportunity to attach event listeners.
-		
-		if (img.width > 0 && img.height > 0) {
-			// Determine proper start step
-			var startTime = Lib.getTimer();
-			
-			// Write first ~20K pixels to see how fast it is
-			var height = Math.ceil(Math.min(20 * 1024 / img.width, img.height));
-			writeIDATChunk(img, 0, height, deflateStream, png);
-			
-			var endTime = Lib.getTimer();
-			updateMsPerLine(endTime - startTime, height);
-			
-			// Use unmeasured FPS as guestimate to seed msPerFrame
-			var fps = Lib.current == null || Lib.current.stage == null ? 24 : Lib.current.stage.frameRate;
-			updateMsPerFrame(Std.int(1.0 / fps * 1000));
-			
-			updateUpdatesPerFrame(1);
-			
-			updateStep();
-			
-			currentY = height;
+		if (encoding) {
+			// Add to queue for later!
+			pendingAsyncEncodings.push(this);
 		}
 		else {
-			// A dimension is 0
-			step = img.height;
+			lastFrameStart = Lib.getTimer();
+			
+			// Preserve current domain memory so that we can leave it as we found
+			// it once we've finished using it
+			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+			
+			png = beginEncoding(img);
+			currentY = 0;
+			frameCount = 0;
+			done = false;
+			msPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
+			msPerFrameIndex = 0;
+			msPerLine = new Vector<Float>(FRAME_AVG_SMOOTH_COUNT, true);
+			msPerLineIndex = 0;
+			updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
+			updatesPerFrameIndex = 0;
+			targetFPS = 20;		// Default, can be overridden
+			
+			// Note that this effectively freezes the compression level for the
+			// duration of the encoding (even if the static level member changes)
+			deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
+			
+			// Get notified of new frames, and timer events
+			sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
+			timer = new Timer(1);		// Really means "update as often as possible"
+			timer.addEventListener(TimerEvent.TIMER, onTimer);
+			timer.start();
+			
+			// We write data in chunks (one per update), starting with one
+			// chunk right now in order to gather some statistics up front
+			// to make an informed estimate for the next update's step size.
+			
+			// Note that small images may be entirely encoded in this step,
+			// but we don't dispatch any events until the next update in
+			// order to give the client an opportunity to attach event listeners.
+			
+			if (img.width > 0 && img.height > 0) {
+				// Determine proper start step
+				var startTime = Lib.getTimer();
+				
+				// Write first ~20K pixels to see how fast it is
+				var height = Math.ceil(Math.min(20 * 1024 / img.width, img.height));
+				writeIDATChunk(img, 0, height, deflateStream, png);
+				
+				var endTime = Lib.getTimer();
+				updateMsPerLine(endTime - startTime, height);
+				
+				// Use unmeasured FPS as guestimate to seed msPerFrame
+				var fps = Lib.current == null || Lib.current.stage == null ? 24 : Lib.current.stage.frameRate;
+				updateMsPerFrame(Std.int(1.0 / fps * 1000));
+				
+				updateUpdatesPerFrame(1);
+				
+				updateStep();
+				
+				currentY = height;
+			}
+			else {
+				// A dimension is 0
+				step = img.height;
+			}
+			
+			updates = 0;
+			
+			Memory.select(oldFastMem);		// Play nice!
 		}
-		
-		updates = 0;
-		
-		Memory.select(oldFastMem);		// Play nice!
 	}
 	
 	
@@ -533,6 +543,13 @@ class PNGEncoder2 extends EventDispatcher
 				msPerFrame = null;
 				msPerLine = null;
 				updatesPerFrame = null;
+				
+				if (!encoding && pendingAsyncEncodings.length > 0) {
+					// Need to check `encoding` just in case someone started encoding another PNG
+					// in the async COMPLETED event handler
+					var next = pendingAsyncEncodings.shift();
+					next._new(next.img, next.dispatcher);
+				}
 			}
 		}
 	}
