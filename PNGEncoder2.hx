@@ -66,11 +66,11 @@ class PNGEncoder2 extends EventDispatcher
 	public static var level : CompressionLevel;
 	
 	// Provide both HaXe and AS3 properties to access the target FPS (read/write)
-	@:protected private inline function getTargetFPS() return __impl.targetFPS
-	@:protected private inline function setTargetFPS(fps : Int) return __impl.targetFPS = fps
-	@:protected public var targetFPS(getTargetFPS, setTargetFPS) : Int;
-	@:getter(targetFPS) private function flGetTargetFPS() return getTargetFPS()
-	@:setter(targetFPS) private function flSetTargetFPS(fps : Int) setTargetFPS(fps)
+	@:protected private inline function get_targetFPS() { return __impl.targetFPS; }
+	@:protected private inline function set_targetFPS(fps : Int) { return __impl.targetFPS = fps; }
+	@:protected public var targetFPS(get_targetFPS, set_targetFPS) : Int;
+	@:getter(targetFPS) private function flGetTargetFPS() { return get_targetFPS(); }
+	@:setter(targetFPS) private function flSetTargetFPS(fps : Int) { set_targetFPS(fps); }
 	
 	
 	/**
@@ -81,7 +81,7 @@ class PNGEncoder2 extends EventDispatcher
 	 * Highly optimized for speed.
 	 *
 	 * @param image The BitmapData that will be converted into the PNG format.
-	 * @return a ByteArray representing the PNG encoded image data.
+	 * @param outPng An IDataOutput (e.g. ByteArray) object that the PNG encoded image data will be written to.
 	 * @playerversion Flash 10
 	 */
 	public static function encode(image : BitmapData, outPng : IDataOutput) : Void

@@ -1,5 +1,4 @@
 package;
-import com.remixtechnology.SWFProfiler;
 import flash.Boot;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
@@ -219,10 +218,9 @@ class Test extends Sprite
 		return true;
 	}
 	
-	
 	private static function testOptimizedPNGEncoder(bmp : BitmapData, runs : Int) : Int
 	{
-		return time(function() { PNGEncoder2.encode(bmp, new ByteArray()); } , runs);
+		return time(function() { PNGEncoder2.encode(bmp, new ByteArray()); }, runs);
 	}
 	
 	
