@@ -1,5 +1,4 @@
 package;
-import com.remixtechnology.SWFProfiler;
 import flash.Boot;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
@@ -184,7 +183,7 @@ class Test extends Sprite
 	
 	private static function testPNGEncoder(bmp : BitmapData, runs : Int) : Int
 	{
-		return time(callback(PNGEncoder.encode, bmp), runs);
+		return time(makeCallback(PNGEncoder.encode, bmp), runs);
 	}
 	
 	private static function round(num : Float, decimalPlaces : Int) : Float
@@ -216,10 +215,16 @@ class Test extends Sprite
 		return true;
 	}
 	
+	private static function makeCallback(encode : BitmapData -> Dynamic, bmp : BitmapData) : Void -> Dynamic
+	{
+		return function() {
+			return encode(bmp);
+		};
+	}
 	
 	private static function testOptimizedPNGEncoder(bmp : BitmapData, runs : Int) : Int
 	{
-		return time(callback(PNGEncoder2.encode, bmp), runs);
+		return time(makeCallback(PNGEncoder2.encode, bmp), runs);
 	}
 	
 	
