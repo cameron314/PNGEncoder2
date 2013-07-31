@@ -119,8 +119,7 @@ To link an SWC in other versions of the Flash IDE, follow
 If you're using haXe, just use the source
 directly instead of fiddling with SWCs (actually, your project won't compile if you use the SWC).
 All you need are the
-[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files. Note that this
-project was built for haXe 2; I haven't tested it under the new haXe 3 compiler.
+[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files. Compiles under both haXe 2 and 3.
 
 If you want to have only one compression method compiled
 (to cut down on generated code size), add `-D FAST_ONLY`,
