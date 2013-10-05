@@ -82,11 +82,11 @@ encoder.addEventListener(Event.COMPLETE, function (e) {
 Installation
 ============
 
-Note that this library **requires Flash 10 or higher**. <s>Unfortunately, until
+Note that this library **requires Flash 10 or higher**. <del>Unfortunately, until
 Adobe decides what they're doing with the next version of Alchemy, this library
 <a href="http://blogs.adobe.com/flashplayer/2011/09/updates-from-the-lab.html">won't
 work in any SWF compiled to target Flash player 11 (SWF version 13) or above</a>
-(as of Flash Player 11.2). So, you can target Flash 10 (SWF versions 10-12) only for now.</s>
+(as of Flash Player 11.2). So, you can target Flash 10 (SWF versions 10-12) only for now.</del>
 *Update:* It seems this library works fine even with recent versions of Flash Player (11.7 at
 the time of writing). Go figure.
 
@@ -119,8 +119,7 @@ To link an SWC in other versions of the Flash IDE, follow
 If you're using haXe, just use the source
 directly instead of fiddling with SWCs (actually, your project won't compile if you use the SWC).
 All you need are the
-[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files. Note that this
-project was built for haXe 2; I haven't tested it under the new haXe 3 compiler.
+[PNGEncoder2.hx][PNGEncoder2.hx] and [DeflateStream.hx][DeflateStream.hx] files. Compiles under both haXe 2 and 3.
 
 If you want to have only one compression method compiled
 (to cut down on generated code size), add `-D FAST_ONLY`,
