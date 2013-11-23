@@ -114,6 +114,21 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	
+#if DECODER
+	/**
+	 * Provides a simple, synchronous (but fast) decoder for image files
+	 * created using PNGEncoder2 (though not, alas, arbitrary PNGs).
+	 *
+	 * @param pngBytes The raw bytes of the PNG encoded image data.
+	 * @return A BitmapData representing the decoded image.
+	 * @playerversion Flash 10
+	 */
+	public static inline function decode(pngBytes : ByteArray) : BitmapData
+	{
+		return PNGEncoder2Impl.decode(pngBytes);
+	}
+#end
+	
 	private inline function new(image : BitmapData)
 	{
 		super();
@@ -197,6 +212,140 @@ class PNGEncoder2 extends EventDispatcher
 		Memory.select(oldFastMem);
 		return png;
 	}
+	
+#if DECODER
+	public static function decode(pngBytes : ByteArray) : BitmapData
+	{
+		var start = Lib.getTimer();
+		
+		// Assumes valid PNG created by PNGEncoder2 -- only the most basic error checking is done!
+		var failed = false;
+		if (pngBytes.length < 16) {
+			failed = true;
+		}
+		
+		if (!failed && (pngBytes.readInt() != 0x89504e47 || pngBytes.readInt() != 0x0D0A1A0A)) {
+			failed = true;
+		}
+		trace("Basic prelude: " + (Lib.getTimer() - start) + "ms");
+		start = Lib.getTimer();
+		
+		var bmp : BitmapData = null;
+		if (!failed) {
+			// Extract the dimensions, bit depth, and all the IDAT chunks
+			var width = -1;
+			var height = -1;
+			var transparent = false;
+			var idatData = new ByteArray();
+			var chunkLength = pngBytes.readUnsignedInt();
+			var chunkType = pngBytes.readUnsignedInt();
+			if (chunkType != 0x49484452 /* IHDR */) {
+				failed = true;
+			}
+			while (chunkType != 0x49454E44 /* IEND */) {
+				if (chunkType == 0x49484452 /* IHDR */) {
+					if (chunkLength != 13) {
+						failed = true;
+					}
+					
+					width = pngBytes.readInt();
+					height = pngBytes.readInt();
+					++pngBytes.position;		// Ignore bit depth (constant)
+					transparent = pngBytes.readUnsignedByte() == 6;
+					pngBytes.position += 3;		// Ignore other options (constant)
+					// Resize to maximum length to avoid too many resizes when there's lots of chunks
+					idatData.length = height * (width + 1);
+				}
+				else if (chunkType == 0x49444154 /* IDAT */) {
+					pngBytes.readBytes(idatData, idatData.position, chunkLength);
+					idatData.position += chunkLength;
+				}
+				pngBytes.position += 4;		// Ignore CRC-32 of chunk
+				chunkLength = pngBytes.readUnsignedInt();
+				chunkType = pngBytes.readUnsignedInt();
+			}
+			
+			trace("Chunk parsing & copying: " + (Lib.getTimer() - start) + "ms");
+			
+			if (width == 0 || height == 0) {
+				bmp = new BitmapData(width, height, transparent, 0x00FFFFFF);
+			}
+			else if (!failed) {
+				// Decompress the data (note: this is actually quite slow compared to
+				// what it should be! But still quite fast relatively speaking...)
+				start = Lib.getTimer();
+				idatData.uncompress();
+				trace("uncompress(): " + (Lib.getTimer() - start) + "ms");
+				
+				start = Lib.getTimer();
+				
+				// Reverse the Paeth filter (and add in alpha values if the PNG was non-transparent,
+				// otherwise move the alpha byte from the end to the beginning).
+				// Note: PNG is RGBA, Flash wants ARGB, and get/setI32 are little-endian.
+				var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
+				var addr = 0;
+				if (transparent) {
+					var bmpDataStart : Int = idatData.length;
+					var scratchAddr : Int = bmpDataStart;
+					idatData.length = idatData.length + width * height * 4;
+					Memory.select(idatData);
+					
+					// First line
+					++addr;		// Skip filter byte (it's always sub for the first line)
+					Memory.setI32(scratchAddr, rotl8(Memory.getI32(addr)));	// first pixel
+					var widthBy4 = width * 4;
+					var endAddr = scratchAddr + widthBy4;
+					addr += 4;
+					scratchAddr += 4;
+					// TODO: Unroll
+					while (scratchAddr != endAddr) {
+						Memory.setByte(scratchAddr    , Memory.getByte(addr + 3) + Memory.getByte(scratchAddr - 4));
+						Memory.setByte(scratchAddr + 1, Memory.getByte(addr    ) + Memory.getByte(scratchAddr - 3));
+						Memory.setByte(scratchAddr + 2, Memory.getByte(addr + 1) + Memory.getByte(scratchAddr - 2));
+						Memory.setByte(scratchAddr + 3, Memory.getByte(addr + 2) + Memory.getByte(scratchAddr - 1));
+						addr += 4;
+						scratchAddr += 4;
+					}
+					
+					// Other lines:
+					for (i in 1 ... height) {
+						++addr;	// Skip filter byte (always Paeth here)
+						// Do first pixel (4 bytes) manually (formula is different)
+						Memory.setByte(scratchAddr    , Memory.getByte(addr + 3) + Memory.getByte(scratchAddr     - widthBy4));
+						Memory.setByte(scratchAddr + 1, Memory.getByte(addr    ) + Memory.getByte(scratchAddr + 1 - widthBy4));
+						Memory.setByte(scratchAddr + 2, Memory.getByte(addr + 1) + Memory.getByte(scratchAddr + 2 - widthBy4));
+						Memory.setByte(scratchAddr + 3, Memory.getByte(addr + 2) + Memory.getByte(scratchAddr + 3 - widthBy4));
+						endAddr = scratchAddr + widthBy4;
+						addr += 4;
+						scratchAddr += 4;
+						// TODO: Unroll
+						while (scratchAddr != endAddr) {
+							Memory.setByte(scratchAddr    , Memory.getByte(addr + 3) + paethPredictor(Memory.getByte(scratchAddr - 4), Memory.getByte(scratchAddr     - widthBy4), Memory.getByte(scratchAddr - 4 - widthBy4)));
+							Memory.setByte(scratchAddr + 1, Memory.getByte(addr    ) + paethPredictor(Memory.getByte(scratchAddr - 3), Memory.getByte(scratchAddr + 1 - widthBy4), Memory.getByte(scratchAddr - 3 - widthBy4)));
+							Memory.setByte(scratchAddr + 2, Memory.getByte(addr + 1) + paethPredictor(Memory.getByte(scratchAddr - 2), Memory.getByte(scratchAddr + 2 - widthBy4), Memory.getByte(scratchAddr - 2 - widthBy4)));
+							Memory.setByte(scratchAddr + 3, Memory.getByte(addr + 2) + paethPredictor(Memory.getByte(scratchAddr - 1), Memory.getByte(scratchAddr + 3 - widthBy4), Memory.getByte(scratchAddr - 1 - widthBy4)));
+							addr += 4;
+							scratchAddr += 4;
+						}
+					}
+					
+					// Copy into a BitmapData!
+					idatData.position = bmpDataStart;
+					bmp = new BitmapData(width, height, transparent, 0x00FFFFFF);
+					bmp.setPixels(new Rectangle(0, 0, width, height), idatData);
+					Memory.select(oldFastMem);
+				}
+				else {
+					// TODO!
+				}
+				trace("Reverse filters: " + (Lib.getTimer() - start) + "ms");
+			}
+		}
+		return bmp;
+	}
+	
+	private static inline function rotl8(x : Int) { return (x << 8) | (x >>> 24); }
+#end
 	
 	private static inline function beginEncoding(img : BitmapData) : ByteArray
 	{
