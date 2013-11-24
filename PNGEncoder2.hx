@@ -254,7 +254,7 @@ class PNGEncoder2 extends EventDispatcher
 					transparent = pngBytes.readUnsignedByte() == 6;
 					pngBytes.position += 3;		// Ignore other options (constant)
 					// Resize to maximum length to avoid too many resizes when there's lots of chunks
-					idatData.length = height * (width + 1);
+					idatData.length = transparent ? (height * width * 4 + height) : (height * width * 3 + height);
 				}
 				else if (chunkType == 0x49444154 /* IDAT */) {
 					pngBytes.readBytes(idatData, idatData.position, chunkLength);
@@ -272,7 +272,7 @@ class PNGEncoder2 extends EventDispatcher
 			}
 			else if (!failed) {
 				// Decompress the data (note: this is actually quite slow compared to
-				// what it should be! But still quite fast relatively speaking...)
+				// what it should be! But still fast relatively speaking...)
 				start = Lib.getTimer();
 				idatData.uncompress();
 				trace("uncompress(): " + (Lib.getTimer() - start) + "ms");
@@ -284,56 +284,54 @@ class PNGEncoder2 extends EventDispatcher
 				// Note: PNG is RGBA, Flash wants ARGB, and get/setI32 are little-endian.
 				var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 				var addr = 0;
+				
 				if (transparent) {
-					var bmpDataStart : Int = idatData.length;
-					var scratchAddr : Int = bmpDataStart;
-					idatData.length = idatData.length + width * height * 4;
+					// Since the uncompressed data is > than the final bitmap size,
+					// we can undo the filter in-place
+					var destAddr : Int = 0;
 					Memory.select(idatData);
 					
 					// First line
 					++addr;		// Skip filter byte (it's always sub for the first line)
-					Memory.setI32(scratchAddr, rotl8(Memory.getI32(addr)));	// first pixel
+					Memory.setI32(destAddr, rotl8(Memory.getI32(addr)));	// first pixel
 					var widthBy4 = width * 4;
-					var endAddr = scratchAddr + widthBy4;
+					var endAddr = destAddr + widthBy4;
+					var paeth : Int;
 					addr += 4;
-					scratchAddr += 4;
+					destAddr += 4;
 					// TODO: Unroll
-					while (scratchAddr != endAddr) {
-						Memory.setByte(scratchAddr    , Memory.getByte(addr + 3) + Memory.getByte(scratchAddr - 4));
-						Memory.setByte(scratchAddr + 1, Memory.getByte(addr    ) + Memory.getByte(scratchAddr - 3));
-						Memory.setByte(scratchAddr + 2, Memory.getByte(addr + 1) + Memory.getByte(scratchAddr - 2));
-						Memory.setByte(scratchAddr + 3, Memory.getByte(addr + 2) + Memory.getByte(scratchAddr - 1));
+					while (destAddr != endAddr) {
+						Memory.setI32(destAddr, bytewiseadd(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - 4)));
 						addr += 4;
-						scratchAddr += 4;
+						destAddr += 4;
 					}
 					
 					// Other lines:
 					for (i in 1 ... height) {
 						++addr;	// Skip filter byte (always Paeth here)
 						// Do first pixel (4 bytes) manually (formula is different)
-						Memory.setByte(scratchAddr    , Memory.getByte(addr + 3) + Memory.getByte(scratchAddr     - widthBy4));
-						Memory.setByte(scratchAddr + 1, Memory.getByte(addr    ) + Memory.getByte(scratchAddr + 1 - widthBy4));
-						Memory.setByte(scratchAddr + 2, Memory.getByte(addr + 1) + Memory.getByte(scratchAddr + 2 - widthBy4));
-						Memory.setByte(scratchAddr + 3, Memory.getByte(addr + 2) + Memory.getByte(scratchAddr + 3 - widthBy4));
-						endAddr = scratchAddr + widthBy4;
+						Memory.setI32(destAddr, bytewiseadd(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - widthBy4)));
+						endAddr = destAddr + widthBy4;
 						addr += 4;
-						scratchAddr += 4;
+						destAddr += 4;
 						// TODO: Unroll
-						while (scratchAddr != endAddr) {
-							Memory.setByte(scratchAddr    , Memory.getByte(addr + 3) + paethPredictor(Memory.getByte(scratchAddr - 4), Memory.getByte(scratchAddr     - widthBy4), Memory.getByte(scratchAddr - 4 - widthBy4)));
-							Memory.setByte(scratchAddr + 1, Memory.getByte(addr    ) + paethPredictor(Memory.getByte(scratchAddr - 3), Memory.getByte(scratchAddr + 1 - widthBy4), Memory.getByte(scratchAddr - 3 - widthBy4)));
-							Memory.setByte(scratchAddr + 2, Memory.getByte(addr + 1) + paethPredictor(Memory.getByte(scratchAddr - 2), Memory.getByte(scratchAddr + 2 - widthBy4), Memory.getByte(scratchAddr - 2 - widthBy4)));
-							Memory.setByte(scratchAddr + 3, Memory.getByte(addr + 2) + paethPredictor(Memory.getByte(scratchAddr - 1), Memory.getByte(scratchAddr + 3 - widthBy4), Memory.getByte(scratchAddr - 1 - widthBy4)));
+						while (destAddr != endAddr) {
+							// TODO: SIMD paeth?
+							paeth = paethPredictor(Memory.getByte(destAddr - 4), Memory.getByte(destAddr     - widthBy4), Memory.getByte(destAddr - 4 - widthBy4))
+								 | (paethPredictor(Memory.getByte(destAddr - 3), Memory.getByte(destAddr + 1 - widthBy4), Memory.getByte(destAddr - 3 - widthBy4)) << 8)
+								 | (paethPredictor(Memory.getByte(destAddr - 2), Memory.getByte(destAddr + 2 - widthBy4), Memory.getByte(destAddr - 2 - widthBy4)) << 16)
+								 | (paethPredictor(Memory.getByte(destAddr - 1), Memory.getByte(destAddr + 3 - widthBy4), Memory.getByte(destAddr - 1 - widthBy4)) << 24);
+							Memory.setI32(destAddr, bytewiseadd(rotl8(Memory.getI32(addr)), paeth));
 							addr += 4;
-							scratchAddr += 4;
+							destAddr += 4;
 						}
 					}
 					
 					// Copy into a BitmapData!
-					idatData.position = bmpDataStart;
+					Memory.select(oldFastMem);
+					idatData.position = 0;
 					bmp = new BitmapData(width, height, transparent, 0x00FFFFFF);
 					bmp.setPixels(new Rectangle(0, 0, width, height), idatData);
-					Memory.select(oldFastMem);
 				}
 				else {
 					// TODO!
@@ -345,6 +343,10 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 	private static inline function rotl8(x : Int) { return (x << 8) | (x >>> 24); }
+	private static inline function bytewiseadd(a : Int, b : Int)
+	{
+		return (((a & 0xFF00FF00) + (b & 0xFF00FF00)) & 0xFF00FF00) | (((a & 0x00FF00FF) + (b & 0x00FF00FF)) & 0x00FF00FF);
+	}
 #end
 	
 	private static inline function beginEncoding(img : BitmapData) : ByteArray
