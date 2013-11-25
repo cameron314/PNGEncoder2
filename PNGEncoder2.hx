@@ -214,9 +214,9 @@ class PNGEncoder2 extends EventDispatcher
 	}
 	
 #if DECODER
-	public static function decode(pngBytes : ByteArray) : BitmapData
+	public static inline function decode(pngBytes : ByteArray) : BitmapData
 	{
-		var start = Lib.getTimer();
+		//var start = Lib.getTimer();
 		
 		// Assumes valid PNG created by PNGEncoder2 -- only the most basic error checking is done!
 		var failed = false;
@@ -227,8 +227,8 @@ class PNGEncoder2 extends EventDispatcher
 		if (!failed && (pngBytes.readInt() != 0x89504e47 || pngBytes.readInt() != 0x0D0A1A0A)) {
 			failed = true;
 		}
-		trace("Basic prelude: " + (Lib.getTimer() - start) + "ms");
-		start = Lib.getTimer();
+		//trace("Basic prelude: " + (Lib.getTimer() - start) + "ms");
+		//start = Lib.getTimer();
 		
 		var bmp : BitmapData = null;
 		if (!failed) {
@@ -265,19 +265,18 @@ class PNGEncoder2 extends EventDispatcher
 				chunkType = pngBytes.readUnsignedInt();
 			}
 			
-			trace("Chunk parsing & copying: " + (Lib.getTimer() - start) + "ms");
+			//trace("Chunk parsing & copying: " + (Lib.getTimer() - start) + "ms");
 			
 			if (width == 0 || height == 0) {
 				bmp = new BitmapData(width, height, transparent, 0x00FFFFFF);
 			}
 			else if (!failed) {
-				// Decompress the data (note: this is actually quite slow compared to
-				// what it should be! But still fast relatively speaking...)
-				start = Lib.getTimer();
+				// Decompress the data (is this as fast as it could be? Seems a tad
+				// slower than I was expecting... but still relatively quick, I suppose)
+				//start = Lib.getTimer();
 				idatData.uncompress();
-				trace("uncompress(): " + (Lib.getTimer() - start) + "ms");
-				
-				start = Lib.getTimer();
+				//trace("uncompress(): " + (Lib.getTimer() - start) + "ms");
+				//start = Lib.getTimer();
 				
 				// Reverse the Paeth filter (and add in alpha values if the PNG was non-transparent,
 				// otherwise move the alpha byte from the end to the beginning).
@@ -336,7 +335,7 @@ class PNGEncoder2 extends EventDispatcher
 				else {
 					// TODO!
 				}
-				trace("Reverse filters: " + (Lib.getTimer() - start) + "ms");
+				//trace("Reverse filters: " + (Lib.getTimer() - start) + "ms");
 			}
 		}
 		return bmp;
