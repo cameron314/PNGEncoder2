@@ -280,7 +280,7 @@ class PNGEncoder2 extends EventDispatcher
 				
 				// Reverse the Paeth filter (and add in alpha values if the PNG was non-transparent,
 				// otherwise move the alpha byte from the end to the beginning).
-				// Note: PNG is RGBA, Flash wants ARGB, and get/setI32 are little-endian.
+				// Note: PNG is RGB(A), Flash wants ARGB, and get/setI32 are little-endian.
 				var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 				var addr = 0;
 				
@@ -295,12 +295,31 @@ class PNGEncoder2 extends EventDispatcher
 					Memory.setI32(destAddr, rotl8(Memory.getI32(addr)));	// first pixel
 					var widthBy4 = width * 4;
 					var endAddr = destAddr + widthBy4;
-					var paeth : Int;
 					addr += 4;
 					destAddr += 4;
-					// TODO: Unroll
+					var endAddr64 = destAddr + ((widthBy4 - 1) & 0xFFFFFFC0);
+					while (destAddr != endAddr64) {
+						Memory.setI32(destAddr, byteAdd4(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - 4)));
+						Memory.setI32(destAddr + 4, byteAdd4(rotl8(Memory.getI32(addr + 4)), Memory.getI32(destAddr)));
+						Memory.setI32(destAddr + 8, byteAdd4(rotl8(Memory.getI32(addr + 8)), Memory.getI32(destAddr + 4)));
+						Memory.setI32(destAddr + 12, byteAdd4(rotl8(Memory.getI32(addr + 12)), Memory.getI32(destAddr + 8)));
+						Memory.setI32(destAddr + 16, byteAdd4(rotl8(Memory.getI32(addr + 16)), Memory.getI32(destAddr + 12)));
+						Memory.setI32(destAddr + 20, byteAdd4(rotl8(Memory.getI32(addr + 20)), Memory.getI32(destAddr + 16)));
+						Memory.setI32(destAddr + 24, byteAdd4(rotl8(Memory.getI32(addr + 24)), Memory.getI32(destAddr + 20)));
+						Memory.setI32(destAddr + 28, byteAdd4(rotl8(Memory.getI32(addr + 28)), Memory.getI32(destAddr + 24)));
+						Memory.setI32(destAddr + 32, byteAdd4(rotl8(Memory.getI32(addr + 32)), Memory.getI32(destAddr + 28)));
+						Memory.setI32(destAddr + 36, byteAdd4(rotl8(Memory.getI32(addr + 36)), Memory.getI32(destAddr + 32)));
+						Memory.setI32(destAddr + 40, byteAdd4(rotl8(Memory.getI32(addr + 40)), Memory.getI32(destAddr + 36)));
+						Memory.setI32(destAddr + 44, byteAdd4(rotl8(Memory.getI32(addr + 44)), Memory.getI32(destAddr + 40)));
+						Memory.setI32(destAddr + 48, byteAdd4(rotl8(Memory.getI32(addr + 48)), Memory.getI32(destAddr + 44)));
+						Memory.setI32(destAddr + 52, byteAdd4(rotl8(Memory.getI32(addr + 52)), Memory.getI32(destAddr + 48)));
+						Memory.setI32(destAddr + 56, byteAdd4(rotl8(Memory.getI32(addr + 56)), Memory.getI32(destAddr + 52)));
+						Memory.setI32(destAddr + 60, byteAdd4(rotl8(Memory.getI32(addr + 60)), Memory.getI32(destAddr + 56)));
+						addr += 64;
+						destAddr += 64;
+					}
 					while (destAddr != endAddr) {
-						Memory.setI32(destAddr, bytewiseadd(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - 4)));
+						Memory.setI32(destAddr, byteAdd4(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - 4)));
 						addr += 4;
 						destAddr += 4;
 					}
@@ -309,22 +328,38 @@ class PNGEncoder2 extends EventDispatcher
 					for (i in 1 ... height) {
 						++addr;	// Skip filter byte (always Paeth here)
 						// Do first pixel (4 bytes) manually (formula is different)
-						Memory.setI32(destAddr, bytewiseadd(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - widthBy4)));
+						Memory.setI32(destAddr, byteAdd4(rotl8(Memory.getI32(addr)), Memory.getI32(destAddr - widthBy4)));
 						endAddr = destAddr + widthBy4;
 						addr += 4;
 						destAddr += 4;
-						// TODO: Unroll
+						endAddr64 = destAddr + ((widthBy4 - 1) & 0xFFFFFFC0);
+						while (destAddr != endAddr64) {
+							Memory.setI32(destAddr, byteAdd4(rotl8(Memory.getI32(addr)), paethPredictor4(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
+							Memory.setI32(destAddr + 4, byteAdd4(rotl8(Memory.getI32(addr + 4)), paethPredictor4(Memory.getI32(destAddr    ), Memory.getI32(destAddr + 4 - widthBy4), Memory.getI32(destAddr     - widthBy4))));
+							Memory.setI32(destAddr + 8, byteAdd4(rotl8(Memory.getI32(addr + 8)), paethPredictor4(Memory.getI32(destAddr + 4), Memory.getI32(destAddr + 8 - widthBy4), Memory.getI32(destAddr + 4 - widthBy4))));
+							Memory.setI32(destAddr + 12, byteAdd4(rotl8(Memory.getI32(addr + 12)), paethPredictor4(Memory.getI32(destAddr + 8), Memory.getI32(destAddr + 12 - widthBy4), Memory.getI32(destAddr + 8 - widthBy4))));
+							Memory.setI32(destAddr + 16, byteAdd4(rotl8(Memory.getI32(addr + 16)), paethPredictor4(Memory.getI32(destAddr + 12), Memory.getI32(destAddr + 16 - widthBy4), Memory.getI32(destAddr + 12 - widthBy4))));
+							Memory.setI32(destAddr + 20, byteAdd4(rotl8(Memory.getI32(addr + 20)), paethPredictor4(Memory.getI32(destAddr + 16), Memory.getI32(destAddr + 20 - widthBy4), Memory.getI32(destAddr + 16 - widthBy4))));
+							Memory.setI32(destAddr + 24, byteAdd4(rotl8(Memory.getI32(addr + 24)), paethPredictor4(Memory.getI32(destAddr + 20), Memory.getI32(destAddr + 24 - widthBy4), Memory.getI32(destAddr + 20 - widthBy4))));
+							Memory.setI32(destAddr + 28, byteAdd4(rotl8(Memory.getI32(addr + 28)), paethPredictor4(Memory.getI32(destAddr + 24), Memory.getI32(destAddr + 28 - widthBy4), Memory.getI32(destAddr + 24 - widthBy4))));
+							Memory.setI32(destAddr + 32, byteAdd4(rotl8(Memory.getI32(addr + 32)), paethPredictor4(Memory.getI32(destAddr + 28), Memory.getI32(destAddr + 32 - widthBy4), Memory.getI32(destAddr + 28 - widthBy4))));
+							Memory.setI32(destAddr + 36, byteAdd4(rotl8(Memory.getI32(addr + 36)), paethPredictor4(Memory.getI32(destAddr + 32), Memory.getI32(destAddr + 36 - widthBy4), Memory.getI32(destAddr + 32 - widthBy4))));
+							Memory.setI32(destAddr + 40, byteAdd4(rotl8(Memory.getI32(addr + 40)), paethPredictor4(Memory.getI32(destAddr + 36), Memory.getI32(destAddr + 40 - widthBy4), Memory.getI32(destAddr + 36 - widthBy4))));
+							Memory.setI32(destAddr + 44, byteAdd4(rotl8(Memory.getI32(addr + 44)), paethPredictor4(Memory.getI32(destAddr + 40), Memory.getI32(destAddr + 44 - widthBy4), Memory.getI32(destAddr + 40 - widthBy4))));
+							Memory.setI32(destAddr + 48, byteAdd4(rotl8(Memory.getI32(addr + 48)), paethPredictor4(Memory.getI32(destAddr + 44), Memory.getI32(destAddr + 48 - widthBy4), Memory.getI32(destAddr + 44 - widthBy4))));
+							Memory.setI32(destAddr + 52, byteAdd4(rotl8(Memory.getI32(addr + 52)), paethPredictor4(Memory.getI32(destAddr + 48), Memory.getI32(destAddr + 52 - widthBy4), Memory.getI32(destAddr + 48 - widthBy4))));
+							Memory.setI32(destAddr + 56, byteAdd4(rotl8(Memory.getI32(addr + 56)), paethPredictor4(Memory.getI32(destAddr + 52), Memory.getI32(destAddr + 56 - widthBy4), Memory.getI32(destAddr + 52 - widthBy4))));
+							Memory.setI32(destAddr + 60, byteAdd4(rotl8(Memory.getI32(addr + 60)), paethPredictor4(Memory.getI32(destAddr + 56), Memory.getI32(destAddr + 60 - widthBy4), Memory.getI32(destAddr + 56 - widthBy4))));
+							addr += 64;
+							destAddr += 64;
+						}
 						while (destAddr != endAddr) {
-							// TODO: SIMD paeth?
-							paeth = paethPredictor(Memory.getByte(destAddr - 4), Memory.getByte(destAddr     - widthBy4), Memory.getByte(destAddr - 4 - widthBy4))
-								 | (paethPredictor(Memory.getByte(destAddr - 3), Memory.getByte(destAddr + 1 - widthBy4), Memory.getByte(destAddr - 3 - widthBy4)) << 8)
-								 | (paethPredictor(Memory.getByte(destAddr - 2), Memory.getByte(destAddr + 2 - widthBy4), Memory.getByte(destAddr - 2 - widthBy4)) << 16)
-								 | (paethPredictor(Memory.getByte(destAddr - 1), Memory.getByte(destAddr + 3 - widthBy4), Memory.getByte(destAddr - 1 - widthBy4)) << 24);
-							Memory.setI32(destAddr, bytewiseadd(rotl8(Memory.getI32(addr)), paeth));
+							Memory.setI32(destAddr, byteAdd4(rotl8(Memory.getI32(addr)), paethPredictor4(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
 							addr += 4;
 							destAddr += 4;
 						}
 					}
+					//trace("Reverse filters (32-bit): " + (Lib.getTimer() - start) + "ms");
 					
 					// Copy into a BitmapData!
 					Memory.select(oldFastMem);
@@ -332,19 +367,174 @@ class PNGEncoder2 extends EventDispatcher
 					bmp = new BitmapData(width, height, transparent, 0x00FFFFFF);
 					bmp.setPixels(new Rectangle(0, 0, width, height), idatData);
 				}
-				else {
-					// TODO!
+				else {	// 24-bit
+					//var start = Lib.getTimer();
+					
+					var destStart = idatData.length;
+					var destAddr : Int = destStart;
+					// Since Flash wants ARGB (4-byte) values for each pixel,
+					// we can't decode on-place :-(
+					idatData.length = idatData.length + width * height * 4;
+					Memory.select(idatData);
+					
+					// First line
+					++addr;		// Skip filter byte (it's always sub for the first line)
+					// First pixel has different formula
+					Memory.setI16(destAddr, Memory.getByte(addr) << 8);
+					Memory.setByte(destAddr + 2, Memory.getByte(addr + 1));
+					Memory.setByte(destAddr + 3, Memory.getByte(addr + 2));
+					
+					var widthBy4 = width * 4;
+					var endAddr = destAddr + widthBy4;
+					addr += 3;
+					destAddr += 4;
+					var endAddr64 = destAddr + ((widthBy4 - 1) & 0xFFFFFFC0);
+					
+					// Rest of first line
+					--addr;		// Offset addr by one so that when reading 32-bit little-endian RGB value,
+								// we can read a random byte in the alpha (XRGB) which is OK because it's
+								// ignored (but we do it to get the RGB offset properly)
+					while (destAddr != endAddr64) {
+						Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), Memory.getI32(destAddr - 4)));
+						Memory.setI32(destAddr + 4, byteAdd4(Memory.getI32(addr + 3), Memory.getI32(destAddr)));
+						Memory.setI32(destAddr + 8, byteAdd4(Memory.getI32(addr + 6), Memory.getI32(destAddr + 4)));
+						Memory.setI32(destAddr + 12, byteAdd4(Memory.getI32(addr + 9), Memory.getI32(destAddr + 8)));
+						Memory.setI32(destAddr + 16, byteAdd4(Memory.getI32(addr + 12), Memory.getI32(destAddr + 12)));
+						Memory.setI32(destAddr + 20, byteAdd4(Memory.getI32(addr + 15), Memory.getI32(destAddr + 16)));
+						Memory.setI32(destAddr + 24, byteAdd4(Memory.getI32(addr + 18), Memory.getI32(destAddr + 20)));
+						Memory.setI32(destAddr + 28, byteAdd4(Memory.getI32(addr + 21), Memory.getI32(destAddr + 24)));
+						Memory.setI32(destAddr + 32, byteAdd4(Memory.getI32(addr + 24), Memory.getI32(destAddr + 28)));
+						Memory.setI32(destAddr + 36, byteAdd4(Memory.getI32(addr + 27), Memory.getI32(destAddr + 32)));
+						Memory.setI32(destAddr + 40, byteAdd4(Memory.getI32(addr + 30), Memory.getI32(destAddr + 36)));
+						Memory.setI32(destAddr + 44, byteAdd4(Memory.getI32(addr + 33), Memory.getI32(destAddr + 40)));
+						Memory.setI32(destAddr + 48, byteAdd4(Memory.getI32(addr + 36), Memory.getI32(destAddr + 44)));
+						Memory.setI32(destAddr + 52, byteAdd4(Memory.getI32(addr + 39), Memory.getI32(destAddr + 48)));
+						Memory.setI32(destAddr + 56, byteAdd4(Memory.getI32(addr + 42), Memory.getI32(destAddr + 52)));
+						Memory.setI32(destAddr + 60, byteAdd4(Memory.getI32(addr + 45), Memory.getI32(destAddr + 56)));
+						addr += 48;
+						destAddr += 64;
+					}
+					while (destAddr != endAddr) {
+						Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), Memory.getI32(destAddr - 4)));
+						addr += 3;
+						destAddr += 4;
+					}
+					++addr;		// Un-offset addr
+					
+					// Remaining lines:
+					for (i in 1 ... height) {
+						++addr;		// Skip filter byte, always Paeth here
+						
+						// Do first pixel manually (formula is different)
+						Memory.setI16(destAddr, (Memory.getByte(addr) + Memory.getByte(destAddr + 1 - widthBy4)) << 8);
+						Memory.setByte(destAddr + 2, Memory.getByte(addr + 1) + Memory.getByte(destAddr + 2 - widthBy4));
+						Memory.setByte(destAddr + 3, Memory.getByte(addr + 2) + Memory.getByte(destAddr + 3 - widthBy4));
+						
+						endAddr = destAddr + widthBy4;
+						addr += 3;
+						destAddr += 4;
+						endAddr64 = destAddr + ((widthBy4 - 1) & 0xFFFFFFC0);
+						
+						--addr;
+						while (destAddr != endAddr64) {
+							Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), paethPredictor3(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
+							Memory.setI32(destAddr + 4, byteAdd4(Memory.getI32(addr + 3), paethPredictor3(Memory.getI32(destAddr), Memory.getI32(destAddr + 4 - widthBy4), Memory.getI32(destAddr - widthBy4))));
+							Memory.setI32(destAddr + 8, byteAdd4(Memory.getI32(addr + 6), paethPredictor3(Memory.getI32(destAddr + 4), Memory.getI32(destAddr + 8 - widthBy4), Memory.getI32(destAddr + 4 - widthBy4))));
+							Memory.setI32(destAddr + 12, byteAdd4(Memory.getI32(addr + 9), paethPredictor3(Memory.getI32(destAddr + 8), Memory.getI32(destAddr + 12 - widthBy4), Memory.getI32(destAddr + 8 - widthBy4))));
+							Memory.setI32(destAddr + 16, byteAdd4(Memory.getI32(addr + 12), paethPredictor3(Memory.getI32(destAddr + 12), Memory.getI32(destAddr + 16 - widthBy4), Memory.getI32(destAddr + 12 - widthBy4))));
+							Memory.setI32(destAddr + 20, byteAdd4(Memory.getI32(addr + 15), paethPredictor3(Memory.getI32(destAddr + 16), Memory.getI32(destAddr + 20 - widthBy4), Memory.getI32(destAddr + 16 - widthBy4))));
+							Memory.setI32(destAddr + 24, byteAdd4(Memory.getI32(addr + 18), paethPredictor3(Memory.getI32(destAddr + 20), Memory.getI32(destAddr + 24 - widthBy4), Memory.getI32(destAddr + 20 - widthBy4))));
+							Memory.setI32(destAddr + 28, byteAdd4(Memory.getI32(addr + 21), paethPredictor3(Memory.getI32(destAddr + 24), Memory.getI32(destAddr + 28 - widthBy4), Memory.getI32(destAddr + 24 - widthBy4))));
+							Memory.setI32(destAddr + 32, byteAdd4(Memory.getI32(addr + 24), paethPredictor3(Memory.getI32(destAddr + 28), Memory.getI32(destAddr + 32 - widthBy4), Memory.getI32(destAddr + 28 - widthBy4))));
+							Memory.setI32(destAddr + 36, byteAdd4(Memory.getI32(addr + 27), paethPredictor3(Memory.getI32(destAddr + 32), Memory.getI32(destAddr + 36 - widthBy4), Memory.getI32(destAddr + 32 - widthBy4))));
+							Memory.setI32(destAddr + 40, byteAdd4(Memory.getI32(addr + 30), paethPredictor3(Memory.getI32(destAddr + 36), Memory.getI32(destAddr + 40 - widthBy4), Memory.getI32(destAddr + 36 - widthBy4))));
+							Memory.setI32(destAddr + 44, byteAdd4(Memory.getI32(addr + 33), paethPredictor3(Memory.getI32(destAddr + 40), Memory.getI32(destAddr + 44 - widthBy4), Memory.getI32(destAddr + 40 - widthBy4))));
+							Memory.setI32(destAddr + 48, byteAdd4(Memory.getI32(addr + 36), paethPredictor3(Memory.getI32(destAddr + 44), Memory.getI32(destAddr + 48 - widthBy4), Memory.getI32(destAddr + 44 - widthBy4))));
+							Memory.setI32(destAddr + 52, byteAdd4(Memory.getI32(addr + 39), paethPredictor3(Memory.getI32(destAddr + 48), Memory.getI32(destAddr + 52 - widthBy4), Memory.getI32(destAddr + 48 - widthBy4))));
+							Memory.setI32(destAddr + 56, byteAdd4(Memory.getI32(addr + 42), paethPredictor3(Memory.getI32(destAddr + 52), Memory.getI32(destAddr + 56 - widthBy4), Memory.getI32(destAddr + 52 - widthBy4))));
+							Memory.setI32(destAddr + 60, byteAdd4(Memory.getI32(addr + 45), paethPredictor3(Memory.getI32(destAddr + 56), Memory.getI32(destAddr + 60 - widthBy4), Memory.getI32(destAddr + 56 - widthBy4))));
+							addr += 48;
+							destAddr += 64;
+						}
+						while (destAddr != endAddr) {
+							Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), paethPredictor3(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
+							addr += 3;
+							destAddr += 4;
+						}
+						++addr;
+					}
+					//trace("Reverse filters (32-bit): " + (Lib.getTimer() - start) + "ms");
+					
+					// Copy into a BitmapData!
+					Memory.select(oldFastMem);
+					idatData.position = destStart;
+					bmp = new BitmapData(width, height, transparent, 0x00FFFFFF);
+					bmp.setPixels(new Rectangle(0, 0, width, height), idatData);
 				}
-				//trace("Reverse filters: " + (Lib.getTimer() - start) + "ms");
 			}
 		}
 		return bmp;
 	}
 	
 	private static inline function rotl8(x : Int) { return (x << 8) | (x >>> 24); }
-	private static inline function bytewiseadd(a : Int, b : Int)
+	
+	private static inline function byteAdd4(a : UInt, b : UInt)
 	{
 		return (((a & 0xFF00FF00) + (b & 0xFF00FF00)) & 0xFF00FF00) | (((a & 0x00FF00FF) + (b & 0x00FF00FF)) & 0x00FF00FF);
+	}
+	
+	private static inline function paethPredictor4(a : Int, b : Int, c : Int)
+	{
+		var pa = abs((b & 0x000000FF) - (c & 0x000000FF));
+		var pb = abs((a & 0x000000FF) - (c & 0x000000FF));
+		var pc = abs((a & 0x000000FF) + (b & 0x000000FF) - ((c << 1) & 0x000001FE));
+		var notACond = (((pb - pa) | (pc - pa)) >> 31) & 0x000000FF;
+		var notBCond = ((pc - pb) >> 31) & 0x000000FF;
+		
+		pa = abs((b & 0x0000FF00) - (c & 0x0000FF00));
+		pb = abs((a & 0x0000FF00) - (c & 0x0000FF00));
+		pc = abs((a & 0x0000FF00) + (b & 0x0000FF00) - ((c << 1) & 0x0001FE00));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x0000FF00;
+		notBCond |= ((pc - pb) >> 31) & 0x0000FF00;
+		
+		pa = abs((b & 0x00FF0000) - (c & 0x00FF0000));
+		pb = abs((a & 0x00FF0000) - (c & 0x00FF0000));
+		pc = abs((a & 0x00FF0000) + (b & 0x00FF0000) - ((c << 1) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x00FF0000;
+		notBCond |= ((pc - pb) >> 31) & 0x00FF0000;
+		
+		pa = abs(((b >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
+		pb = abs(((a >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
+		pc = abs(((a >> 8) & 0x00FF0000) + ((b >> 8) & 0x00FF0000) - ((c >> 7) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0xFF000000;
+		notBCond |= ((pc - pb) >> 31) & 0xFF000000;
+		
+		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
+		return (a & ~notACond) | (b & notACond & ~notBCond) | (c & notACond & notBCond);
+	}
+	
+	private static inline function paethPredictor3(a : Int, b : Int, c : Int)
+	{
+		var pa = abs((b & 0x0000FF00) - (c & 0x0000FF00));
+		var pb = abs((a & 0x0000FF00) - (c & 0x0000FF00));
+		var pc = abs((a & 0x0000FF00) + (b & 0x0000FF00) - ((c << 1) & 0x0001FE00));
+		var notACond = (((pb - pa) | (pc - pa)) >> 31) & 0x0000FF00;
+		var notBCond = ((pc - pb) >> 31) & 0x0000FF00;
+		
+		pa = abs((b & 0x00FF0000) - (c & 0x00FF0000));
+		pb = abs((a & 0x00FF0000) - (c & 0x00FF0000));
+		pc = abs((a & 0x00FF0000) + (b & 0x00FF0000) - ((c << 1) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x00FF0000;
+		notBCond |= ((pc - pb) >> 31) & 0x00FF0000;
+		
+		pa = abs(((b >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
+		pb = abs(((a >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
+		pc = abs(((a >> 8) & 0x00FF0000) + ((b >> 8) & 0x00FF0000) - ((c >> 7) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0xFF000000;
+		notBCond |= ((pc - pb) >> 31) & 0xFF000000;
+		
+		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
+		return (a & ~notACond) | (b & notACond & ~notBCond) | (c & notACond & notBCond);
 	}
 #end
 	
