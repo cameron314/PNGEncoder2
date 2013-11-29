@@ -78,6 +78,30 @@ encoder.addEventListener(Event.COMPLETE, function (e) {
 // want to be notified of progress
 ```
 
+### Bonus: PNG decoding
+
+Update: Support for synchronous decoding of PNGs that were created using PNGEncoder2 has been added:
+
+```as3
+var bmp : BitmapData = ...;
+var png : ByteArray = PNGEncoder2.encode(bmp);
+bmp = PNGEncoder2.decode(png);		// Round-trip back to BitmapData
+```
+
+Decoding is about twice as fast as encoding, though it should be stressed that only PNGEncoder2 PNGs
+can be decoded properly, not arbitrary PNGs. The advantage is that decoding is faster than using the
+built-in flash.display.Loader object, at the cost of reduced flexibility; if you need to decode arbitrary
+PNG files, or you want to decode asynchronously, use the Loader as usual:
+
+```as3
+var png : ByteArray = ...;    // From a file or encoded PNG ByteArray
+var loader : Loader = new Loader();
+loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function (e) {
+    var bmp : BitmapData = new BitmapData((int)loader.width, (int)loader.height, true, 0x00FFFFFF);
+    bmp.draw(loader);        // Write the decoded PNG to a bitmap data object
+});
+loader.loadBytes(png);
+```
 
 Installation
 ============
@@ -124,7 +148,10 @@ All you need are the
 If you want to have only one compression method compiled
 (to cut down on generated code size), add `-D FAST_ONLY`,
 `-D NORMAL_ONLY`, or `-D GOOD_ONLY` to your compile options
-(this is equivalent to using the slim SWC versions).
+(this is equivalent to using the slim SWC versions). The
+`decode` method is by default not compiled in; to enable it,
+add the `-D DECODER` compile option (which can be combined with
+the others above).
 
 
 [blog]: http://moodycamel.com/blog/2011/a-better-png-encoder-for-flash
