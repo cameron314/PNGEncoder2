@@ -54,7 +54,9 @@ var png : ByteArray;			// Variable to store the result
 
 PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
 
-png = PNGEncoder2.encode(bmp);
+png = new ByteArray();
+PNGEncoder2.encode(bmp, png);
+png.position = 0;
 ```
 	
 ### Asynchronous example:
@@ -64,14 +66,16 @@ var bmp : BitmapData = ...;		// The bitmap you want to encode
 
 PNGEncoder2.level = CompressionLevel.FAST;	// Optional. Defaults to FAST
 
-var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp);
+var png : ByteArray = new ByteArray();
+var encoder : PNGEncoder2 = PNGEncoder2.encodeAsync(bmp, png);
 encoder.targetFPS = 12;		// Optional. Defaults to 20. Lower FPSs yield faster compression
 
 // Because the encoder is guaranteed to fire the COMPLETE event
 // after at least one frame, it's safe to attach the listener after
 // starting the encoding (as long as it's done before the next frame)
 encoder.addEventListener(Event.COMPLETE, function (e) {
-	var png : ByteArray = encoder.png;
+	// You can now use `png`
+	png.position = 0;
 });
 
 // encoder also dispatches ProgressEvent.PROGRESS events if you
@@ -84,7 +88,9 @@ Update: Support for synchronous decoding of PNGs that were created using PNGEnco
 
 ```as3
 var bmp : BitmapData = ...;
-var png : ByteArray = PNGEncoder2.encode(bmp);
+var png : ByteArray = new ByteArray();
+PNGEncoder2.encode(bmp, png);
+png.position = 0;
 bmp = PNGEncoder2.decode(png);		// Round-trip back to BitmapData
 ```
 
