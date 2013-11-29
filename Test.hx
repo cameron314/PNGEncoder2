@@ -3,11 +3,13 @@ import flash.Boot;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
 import flash.display.Loader;
+import flash.display.PixelSnapping;
 import flash.display.Sprite;
 import flash.events.Event;
 import flash.events.IOErrorEvent;
 import flash.events.MouseEvent;
 import flash.Lib;
+import flash.Memory;
 import flash.net.FileReference;
 import flash.text.TextField;
 import flash.text.TextFieldAutoSize;
@@ -20,12 +22,16 @@ class Test extends Sprite
 {
 	private static inline var MARGIN = 10;
 	
+	private var loadFileRef : FileReference;
+	private var saveFileRef : FileReference;
+	private var loader : Loader;
+	private var encoder : PNGEncoder2;
+	private var png : ByteArray;
 	
 	public static function main()
 	{
 		Lib.current.addChild(new Test(200, 200));
 	}
-	
 	
 	public function new(?width : Int, ?height : Int)
 	{
@@ -105,7 +111,7 @@ class Test extends Sprite
 		var data1 = PNGEncoder.encode(bmp);
 		var data2 = new ByteArray(); PNGEncoder2.encode(bmp, data2);
 		
-		var loader = new Loader();
+		loader = new Loader();
 		/*loader.addEventListener(IOErrorEvent.IO_ERROR, function (e) {
 			trace("Error reading PNG that was compressed with optimized encoder\n");
 		});*/
@@ -113,55 +119,65 @@ class Test extends Sprite
 		var that = this;
 		doubleClickEnabled = true;
 		addEventListener(MouseEvent.DOUBLE_CLICK, function (e) {
-			///*
+			/*
 			var fileReference = new FileReference();
 			fileReference.save(data2, "test_png.png");
 			//*/
 			
-			/*
-			var fileReference = new FileReference();
-			fileReference.addEventListener(Event.SELECT, function (e2) {
-				fileReference.load();
+			//*
+			that.loadFileRef = new FileReference();
+			that.loadFileRef.addEventListener(Event.SELECT, function (e2) {
+				that.loadFileRef.load();
 			});
 			
-			fileReference.addEventListener(Event.COMPLETE, function (e2) {
-				var loader = new Loader();
-				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function (e3) {
-					var bmp = new BitmapData(Std.int(loader.width), Std.int(loader.height), true, 0x00FFFFFF);
-					bmp.draw(loader);
+			that.loadFileRef.addEventListener(Event.COMPLETE, function (e2) {
+				that.loader = new Loader();
+				that.loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function (e3) {
+					var bmp = new BitmapData(Std.int(that.loader.width), Std.int(that.loader.height), true, 0x00FFFFFF);
+					bmp.draw(that.loader);
 					
-					var png = new ByteArray();
-					var encoder = PNGEncoder2.encodeAsync(bmp, png);
+					that.png = new ByteArray();
+					that.encoder = PNGEncoder2.encodeAsync(bmp, that.png);
 					var startTime = Lib.getTimer();
-					encoder.addEventListener(Event.COMPLETE, function (e) {
-						var percent = 100 - png.length / (bmp.width * bmp.height * 4) * 100;
+					that.encoder.addEventListener(Event.COMPLETE, function (e) {
+						var percent = 100 - that.png.length / (bmp.width * bmp.height * 4) * 100;
 						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
-						png.position = 0;
-						
-						var loader = new Loader();
-						loader.loadBytes(png);
+						/*var loader = new Loader();
+						loader.loadBytes(that.encoder.png);
 						that.addChild(loader);
 						loader.x = 250;
-						loader.y = 250;
+						loader.y = 250;*/
+						startTime = Lib.getTimer();
+						that.png.position = 0;
+						var decodedBitmapData = PNGEncoder2.decode(that.png);
+						that.png.position = 0;
+						var decodedBitmap = new Bitmap(decodedBitmapData);
+						trace("Decode complete (" + (Lib.getTimer() - startTime) + "ms)");
+						var decoded = new Sprite();
+						decoded.addChild(decodedBitmap);
+						that.addChild(decoded);
+						decoded.x = 250;
+						decoded.y = 250;
 						
-						that.doubleClickEnabled = true;
-						that.addEventListener(MouseEvent.DOUBLE_CLICK, function (e2) {
-							var fileReference = new FileReference();
-							fileReference.save(png, "image.png");
+						decoded.doubleClickEnabled = true;
+						decoded.addEventListener(MouseEvent.DOUBLE_CLICK, function (e4) {
+							that.saveFileRef = new FileReference();
+							e4.stopPropagation();
+							that.saveFileRef.save(that.png, "image.png");
 						});
 					});
 				});
 				
-				loader.loadBytes(fileReference.data);
+				that.loader.loadBytes(that.loadFileRef.data);
 			});
 			
-			fileReference.browse();
+			that.loadFileRef.browse();
 			
-			*/
+			//*/
 		});
 		
-		///*
+		//*
 		loader.loadBytes(data2);
 		loader.x = MARGIN + bmp.width + 10;
 		loader.y = 250;
