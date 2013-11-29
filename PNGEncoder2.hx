@@ -437,27 +437,27 @@ class PNGEncoder2 extends EventDispatcher
 						
 						--addr;
 						while (destAddr != endAddr64) {
-							Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), paethPredictor3(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
-							Memory.setI32(destAddr + 4, byteAdd4(Memory.getI32(addr + 3), paethPredictor3(Memory.getI32(destAddr), Memory.getI32(destAddr + 4 - widthBy4), Memory.getI32(destAddr - widthBy4))));
-							Memory.setI32(destAddr + 8, byteAdd4(Memory.getI32(addr + 6), paethPredictor3(Memory.getI32(destAddr + 4), Memory.getI32(destAddr + 8 - widthBy4), Memory.getI32(destAddr + 4 - widthBy4))));
-							Memory.setI32(destAddr + 12, byteAdd4(Memory.getI32(addr + 9), paethPredictor3(Memory.getI32(destAddr + 8), Memory.getI32(destAddr + 12 - widthBy4), Memory.getI32(destAddr + 8 - widthBy4))));
-							Memory.setI32(destAddr + 16, byteAdd4(Memory.getI32(addr + 12), paethPredictor3(Memory.getI32(destAddr + 12), Memory.getI32(destAddr + 16 - widthBy4), Memory.getI32(destAddr + 12 - widthBy4))));
-							Memory.setI32(destAddr + 20, byteAdd4(Memory.getI32(addr + 15), paethPredictor3(Memory.getI32(destAddr + 16), Memory.getI32(destAddr + 20 - widthBy4), Memory.getI32(destAddr + 16 - widthBy4))));
-							Memory.setI32(destAddr + 24, byteAdd4(Memory.getI32(addr + 18), paethPredictor3(Memory.getI32(destAddr + 20), Memory.getI32(destAddr + 24 - widthBy4), Memory.getI32(destAddr + 20 - widthBy4))));
-							Memory.setI32(destAddr + 28, byteAdd4(Memory.getI32(addr + 21), paethPredictor3(Memory.getI32(destAddr + 24), Memory.getI32(destAddr + 28 - widthBy4), Memory.getI32(destAddr + 24 - widthBy4))));
-							Memory.setI32(destAddr + 32, byteAdd4(Memory.getI32(addr + 24), paethPredictor3(Memory.getI32(destAddr + 28), Memory.getI32(destAddr + 32 - widthBy4), Memory.getI32(destAddr + 28 - widthBy4))));
-							Memory.setI32(destAddr + 36, byteAdd4(Memory.getI32(addr + 27), paethPredictor3(Memory.getI32(destAddr + 32), Memory.getI32(destAddr + 36 - widthBy4), Memory.getI32(destAddr + 32 - widthBy4))));
-							Memory.setI32(destAddr + 40, byteAdd4(Memory.getI32(addr + 30), paethPredictor3(Memory.getI32(destAddr + 36), Memory.getI32(destAddr + 40 - widthBy4), Memory.getI32(destAddr + 36 - widthBy4))));
-							Memory.setI32(destAddr + 44, byteAdd4(Memory.getI32(addr + 33), paethPredictor3(Memory.getI32(destAddr + 40), Memory.getI32(destAddr + 44 - widthBy4), Memory.getI32(destAddr + 40 - widthBy4))));
-							Memory.setI32(destAddr + 48, byteAdd4(Memory.getI32(addr + 36), paethPredictor3(Memory.getI32(destAddr + 44), Memory.getI32(destAddr + 48 - widthBy4), Memory.getI32(destAddr + 44 - widthBy4))));
-							Memory.setI32(destAddr + 52, byteAdd4(Memory.getI32(addr + 39), paethPredictor3(Memory.getI32(destAddr + 48), Memory.getI32(destAddr + 52 - widthBy4), Memory.getI32(destAddr + 48 - widthBy4))));
-							Memory.setI32(destAddr + 56, byteAdd4(Memory.getI32(addr + 42), paethPredictor3(Memory.getI32(destAddr + 52), Memory.getI32(destAddr + 56 - widthBy4), Memory.getI32(destAddr + 52 - widthBy4))));
-							Memory.setI32(destAddr + 60, byteAdd4(Memory.getI32(addr + 45), paethPredictor3(Memory.getI32(destAddr + 56), Memory.getI32(destAddr + 60 - widthBy4), Memory.getI32(destAddr + 56 - widthBy4))));
+							Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), paethPredictor3Hi(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
+							Memory.setI32(destAddr + 4, byteAdd4(Memory.getI32(addr + 3), paethPredictor3Hi(Memory.getI32(destAddr), Memory.getI32(destAddr + 4 - widthBy4), Memory.getI32(destAddr - widthBy4))));
+							Memory.setI32(destAddr + 8, byteAdd4(Memory.getI32(addr + 6), paethPredictor3Hi(Memory.getI32(destAddr + 4), Memory.getI32(destAddr + 8 - widthBy4), Memory.getI32(destAddr + 4 - widthBy4))));
+							Memory.setI32(destAddr + 12, byteAdd4(Memory.getI32(addr + 9), paethPredictor3Hi(Memory.getI32(destAddr + 8), Memory.getI32(destAddr + 12 - widthBy4), Memory.getI32(destAddr + 8 - widthBy4))));
+							Memory.setI32(destAddr + 16, byteAdd4(Memory.getI32(addr + 12), paethPredictor3Hi(Memory.getI32(destAddr + 12), Memory.getI32(destAddr + 16 - widthBy4), Memory.getI32(destAddr + 12 - widthBy4))));
+							Memory.setI32(destAddr + 20, byteAdd4(Memory.getI32(addr + 15), paethPredictor3Hi(Memory.getI32(destAddr + 16), Memory.getI32(destAddr + 20 - widthBy4), Memory.getI32(destAddr + 16 - widthBy4))));
+							Memory.setI32(destAddr + 24, byteAdd4(Memory.getI32(addr + 18), paethPredictor3Hi(Memory.getI32(destAddr + 20), Memory.getI32(destAddr + 24 - widthBy4), Memory.getI32(destAddr + 20 - widthBy4))));
+							Memory.setI32(destAddr + 28, byteAdd4(Memory.getI32(addr + 21), paethPredictor3Hi(Memory.getI32(destAddr + 24), Memory.getI32(destAddr + 28 - widthBy4), Memory.getI32(destAddr + 24 - widthBy4))));
+							Memory.setI32(destAddr + 32, byteAdd4(Memory.getI32(addr + 24), paethPredictor3Hi(Memory.getI32(destAddr + 28), Memory.getI32(destAddr + 32 - widthBy4), Memory.getI32(destAddr + 28 - widthBy4))));
+							Memory.setI32(destAddr + 36, byteAdd4(Memory.getI32(addr + 27), paethPredictor3Hi(Memory.getI32(destAddr + 32), Memory.getI32(destAddr + 36 - widthBy4), Memory.getI32(destAddr + 32 - widthBy4))));
+							Memory.setI32(destAddr + 40, byteAdd4(Memory.getI32(addr + 30), paethPredictor3Hi(Memory.getI32(destAddr + 36), Memory.getI32(destAddr + 40 - widthBy4), Memory.getI32(destAddr + 36 - widthBy4))));
+							Memory.setI32(destAddr + 44, byteAdd4(Memory.getI32(addr + 33), paethPredictor3Hi(Memory.getI32(destAddr + 40), Memory.getI32(destAddr + 44 - widthBy4), Memory.getI32(destAddr + 40 - widthBy4))));
+							Memory.setI32(destAddr + 48, byteAdd4(Memory.getI32(addr + 36), paethPredictor3Hi(Memory.getI32(destAddr + 44), Memory.getI32(destAddr + 48 - widthBy4), Memory.getI32(destAddr + 44 - widthBy4))));
+							Memory.setI32(destAddr + 52, byteAdd4(Memory.getI32(addr + 39), paethPredictor3Hi(Memory.getI32(destAddr + 48), Memory.getI32(destAddr + 52 - widthBy4), Memory.getI32(destAddr + 48 - widthBy4))));
+							Memory.setI32(destAddr + 56, byteAdd4(Memory.getI32(addr + 42), paethPredictor3Hi(Memory.getI32(destAddr + 52), Memory.getI32(destAddr + 56 - widthBy4), Memory.getI32(destAddr + 52 - widthBy4))));
+							Memory.setI32(destAddr + 60, byteAdd4(Memory.getI32(addr + 45), paethPredictor3Hi(Memory.getI32(destAddr + 56), Memory.getI32(destAddr + 60 - widthBy4), Memory.getI32(destAddr + 56 - widthBy4))));
 							addr += 48;
 							destAddr += 64;
 						}
 						while (destAddr != endAddr) {
-							Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), paethPredictor3(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
+							Memory.setI32(destAddr, byteAdd4(Memory.getI32(addr), paethPredictor3Hi(Memory.getI32(destAddr - 4), Memory.getI32(destAddr - widthBy4), Memory.getI32(destAddr - 4 - widthBy4))));
 							addr += 3;
 							destAddr += 4;
 						}
@@ -483,37 +483,7 @@ class PNGEncoder2 extends EventDispatcher
 		return (((a & 0xFF00FF00) + (b & 0xFF00FF00)) & 0xFF00FF00) | (((a & 0x00FF00FF) + (b & 0x00FF00FF)) & 0x00FF00FF);
 	}
 	
-	private static inline function paethPredictor4(a : Int, b : Int, c : Int)
-	{
-		var pa = abs((b & 0x000000FF) - (c & 0x000000FF));
-		var pb = abs((a & 0x000000FF) - (c & 0x000000FF));
-		var pc = abs((a & 0x000000FF) + (b & 0x000000FF) - ((c << 1) & 0x000001FE));
-		var notACond = (((pb - pa) | (pc - pa)) >> 31) & 0x000000FF;
-		var notBCond = ((pc - pb) >> 31) & 0x000000FF;
-		
-		pa = abs((b & 0x0000FF00) - (c & 0x0000FF00));
-		pb = abs((a & 0x0000FF00) - (c & 0x0000FF00));
-		pc = abs((a & 0x0000FF00) + (b & 0x0000FF00) - ((c << 1) & 0x0001FE00));
-		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x0000FF00;
-		notBCond |= ((pc - pb) >> 31) & 0x0000FF00;
-		
-		pa = abs((b & 0x00FF0000) - (c & 0x00FF0000));
-		pb = abs((a & 0x00FF0000) - (c & 0x00FF0000));
-		pc = abs((a & 0x00FF0000) + (b & 0x00FF0000) - ((c << 1) & 0x01FE0000));
-		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x00FF0000;
-		notBCond |= ((pc - pb) >> 31) & 0x00FF0000;
-		
-		pa = abs(((b >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
-		pb = abs(((a >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
-		pc = abs(((a >> 8) & 0x00FF0000) + ((b >> 8) & 0x00FF0000) - ((c >> 7) & 0x01FE0000));
-		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0xFF000000;
-		notBCond |= ((pc - pb) >> 31) & 0xFF000000;
-		
-		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
-		return (a & ~notACond) | (b & notACond & ~notBCond) | (c & notACond & notBCond);
-	}
-	
-	private static inline function paethPredictor3(a : Int, b : Int, c : Int)
+	private static inline function paethPredictor3Hi(a : Int, b : Int, c : Int)
 	{
 		var pa = abs((b & 0x0000FF00) - (c & 0x0000FF00));
 		var pb = abs((a & 0x0000FF00) - (c & 0x0000FF00));
@@ -990,6 +960,10 @@ class PNGEncoder2 extends EventDispatcher
 		// Length of IDAT data: 3 or 4 bytes per pixel + 1 byte per scanline
 		var length : UInt = width * height * bytesPerPixel + height;
 		
+		// Add a dummy byte for 24-bit PNGs (so that we can write one past the end
+		// without hurting anything)
+		var extra : UInt = img.transparent ? 0 : 1;
+		
 		// Size needed to store byte array of bitmap
 		var scratchSize : UInt = width * bufferedHeight * 4;
 		
@@ -999,15 +973,13 @@ class PNGEncoder2 extends EventDispatcher
 		// CHUNK_START + deflated data buffer: scratch (raw image bytes)
 		// CHUNK_START + deflated data buffer + scratchSize: Uncompressed PNG-format image data
 		
-		data.length = Std.int(Math.max(CHUNK_START + deflateStream.maxOutputBufferSize(length) + scratchSize + length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+		data.length = Std.int(Math.max(CHUNK_START + deflateStream.maxOutputBufferSize(length) + scratchSize + length + extra, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
 		Memory.select(data);
 		
 		var scratchAddr : Int = CHUNK_START + deflateStream.maxOutputBufferSize(length);
 		var addrStart : Int = scratchAddr + scratchSize;
 		
 		var addr = addrStart;
-		var end8 = (width & 0xFFFFFFF4) - 8;		// Floor to nearest 8, then subtract 8
-		var j;
 		
 		var imgBytes = img.getPixels(region);
 		imgBytes.position = 0;
@@ -1017,6 +989,8 @@ class PNGEncoder2 extends EventDispatcher
 			scratchAddr += width * 4;
 		}
 		
+		var endAddr;
+		var endAddr64;
 		if (img.transparent) {
 			if (bufferedStartY == startY) {
 				// Do first line of image separately (no row above)
@@ -1025,67 +999,37 @@ class PNGEncoder2 extends EventDispatcher
 				
 				if (width > 0 && height > 0) {
 					// Do first pixel (4 bytes) manually (sub formula is different)
-					Memory.setI32(addr, Memory.getI32(scratchAddr) >>> 8);
-					Memory.setByte(addr + 3, Memory.getByte(scratchAddr));
+					Memory.setI32(addr, rotr8(Memory.getI32(scratchAddr)));
+					endAddr = addr + widthBy4;
 					addr += 4;
 					scratchAddr += 4;
+					endAddr64 = addr + ((widthBy4 - 1) & 0xFFFFFFC0);
 					
 					// Copy line, moving alpha byte to end, and applying filter
-					j = 1;
-					while (j < end8) {
-						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
-						Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr - 4));
-						
-						Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 5) - Memory.getByte(scratchAddr + 1));
-						Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 6) - Memory.getByte(scratchAddr + 2));
-						Memory.setByte(addr + 6, Memory.getByte(scratchAddr + 7) - Memory.getByte(scratchAddr + 3));
-						Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 4) - Memory.getByte(scratchAddr    ));
-						
-						Memory.setByte(addr +  8, Memory.getByte(scratchAddr +  9) - Memory.getByte(scratchAddr + 5));
-						Memory.setByte(addr +  9, Memory.getByte(scratchAddr + 10) - Memory.getByte(scratchAddr + 6));
-						Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 11) - Memory.getByte(scratchAddr + 7));
-						Memory.setByte(addr + 11, Memory.getByte(scratchAddr +  8) - Memory.getByte(scratchAddr + 4));
-						
-						Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 13) - Memory.getByte(scratchAddr +  9));
-						Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 14) - Memory.getByte(scratchAddr + 10));
-						Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 15) - Memory.getByte(scratchAddr + 11));
-						Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 12) - Memory.getByte(scratchAddr +  8));
-						
-						Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 17) - Memory.getByte(scratchAddr + 13));
-						Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 18) - Memory.getByte(scratchAddr + 14));
-						Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 19) - Memory.getByte(scratchAddr + 15));
-						Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 16) - Memory.getByte(scratchAddr + 12));
-						
-						Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 21) - Memory.getByte(scratchAddr + 17));
-						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 22) - Memory.getByte(scratchAddr + 18));
-						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 23) - Memory.getByte(scratchAddr + 19));
-						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 20) - Memory.getByte(scratchAddr + 16));
-						
-						Memory.setByte(addr + 24, Memory.getByte(scratchAddr + 25) - Memory.getByte(scratchAddr + 21));
-						Memory.setByte(addr + 25, Memory.getByte(scratchAddr + 26) - Memory.getByte(scratchAddr + 22));
-						Memory.setByte(addr + 26, Memory.getByte(scratchAddr + 27) - Memory.getByte(scratchAddr + 23));
-						Memory.setByte(addr + 27, Memory.getByte(scratchAddr + 24) - Memory.getByte(scratchAddr + 20));
-						
-						Memory.setByte(addr + 28, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
-						Memory.setByte(addr + 29, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
-						Memory.setByte(addr + 30, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
-						Memory.setByte(addr + 31, Memory.getByte(scratchAddr + 28) - Memory.getByte(scratchAddr + 24));
-						
-						
-						addr += 32;
-						scratchAddr += 32;
-						j += 8;
+					while (addr != endAddr64) {
+						Memory.setI32(addr, rotr8(byteSub4(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr - 4))));
+						Memory.setI32(addr + 4, rotr8(byteSub4(Memory.getI32(scratchAddr + 4), Memory.getI32(scratchAddr))));
+						Memory.setI32(addr + 8, rotr8(byteSub4(Memory.getI32(scratchAddr + 8), Memory.getI32(scratchAddr + 4))));
+						Memory.setI32(addr + 12, rotr8(byteSub4(Memory.getI32(scratchAddr + 12), Memory.getI32(scratchAddr + 8))));
+						Memory.setI32(addr + 16, rotr8(byteSub4(Memory.getI32(scratchAddr + 16), Memory.getI32(scratchAddr + 12))));
+						Memory.setI32(addr + 20, rotr8(byteSub4(Memory.getI32(scratchAddr + 20), Memory.getI32(scratchAddr + 16))));
+						Memory.setI32(addr + 24, rotr8(byteSub4(Memory.getI32(scratchAddr + 24), Memory.getI32(scratchAddr + 20))));
+						Memory.setI32(addr + 28, rotr8(byteSub4(Memory.getI32(scratchAddr + 28), Memory.getI32(scratchAddr + 24))));
+						Memory.setI32(addr + 32, rotr8(byteSub4(Memory.getI32(scratchAddr + 32), Memory.getI32(scratchAddr + 28))));
+						Memory.setI32(addr + 36, rotr8(byteSub4(Memory.getI32(scratchAddr + 36), Memory.getI32(scratchAddr + 32))));
+						Memory.setI32(addr + 40, rotr8(byteSub4(Memory.getI32(scratchAddr + 40), Memory.getI32(scratchAddr + 36))));
+						Memory.setI32(addr + 44, rotr8(byteSub4(Memory.getI32(scratchAddr + 44), Memory.getI32(scratchAddr + 40))));
+						Memory.setI32(addr + 48, rotr8(byteSub4(Memory.getI32(scratchAddr + 48), Memory.getI32(scratchAddr + 44))));
+						Memory.setI32(addr + 52, rotr8(byteSub4(Memory.getI32(scratchAddr + 52), Memory.getI32(scratchAddr + 48))));
+						Memory.setI32(addr + 56, rotr8(byteSub4(Memory.getI32(scratchAddr + 56), Memory.getI32(scratchAddr + 52))));
+						Memory.setI32(addr + 60, rotr8(byteSub4(Memory.getI32(scratchAddr + 60), Memory.getI32(scratchAddr + 56))));
+						addr += 64;
+						scratchAddr += 64;
 					}
-					while (j < width) {
-						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
-						Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr - 4));
+					while (addr != endAddr) {
+						Memory.setI32(addr, rotr8(byteSub4(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr - 4))));
 						addr += 4;
 						scratchAddr += 4;
-						++j;
 					}
 				}
 			}
@@ -1097,70 +1041,37 @@ class PNGEncoder2 extends EventDispatcher
 				
 				if (width > 0) {
 					// Do first pixel (4 bytes) manually (formula is different)
-					Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr + 1 - widthBy4));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr + 2 - widthBy4));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr + 3 - widthBy4));
-					Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - Memory.getByte(scratchAddr     - widthBy4));
+					Memory.setI32(addr, rotr8(byteSub4(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr - widthBy4))));
+					endAddr = addr + widthBy4;
 					addr += 4;
 					scratchAddr += 4;
+					endAddr64 = addr + ((widthBy4 - 1) & 0xFFFFFFC0);
 				
 					// Copy line, moving alpha byte to end, and applying filter
-					j = 1;
-					while (j < end8) {
-						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - paethPredictor(Memory.getByte(scratchAddr - 3), Memory.getByte(scratchAddr + 1 - widthBy4), Memory.getByte(scratchAddr - 3 - widthBy4)));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - paethPredictor(Memory.getByte(scratchAddr - 2), Memory.getByte(scratchAddr + 2 - widthBy4), Memory.getByte(scratchAddr - 2 - widthBy4)));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - paethPredictor(Memory.getByte(scratchAddr - 1), Memory.getByte(scratchAddr + 3 - widthBy4), Memory.getByte(scratchAddr - 1 - widthBy4)));
-						Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - paethPredictor(Memory.getByte(scratchAddr - 4), Memory.getByte(scratchAddr     - widthBy4), Memory.getByte(scratchAddr - 4 - widthBy4)));
-						
-						Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 5) - paethPredictor(Memory.getByte(scratchAddr + 1), Memory.getByte(scratchAddr + 5 - widthBy4), Memory.getByte(scratchAddr + 1 - widthBy4)));
-						Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 6) - paethPredictor(Memory.getByte(scratchAddr + 2), Memory.getByte(scratchAddr + 6 - widthBy4), Memory.getByte(scratchAddr + 2 - widthBy4)));
-						Memory.setByte(addr + 6, Memory.getByte(scratchAddr + 7) - paethPredictor(Memory.getByte(scratchAddr + 3), Memory.getByte(scratchAddr + 7 - widthBy4), Memory.getByte(scratchAddr + 3 - widthBy4)));
-						Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 4) - paethPredictor(Memory.getByte(scratchAddr    ), Memory.getByte(scratchAddr + 4 - widthBy4), Memory.getByte(scratchAddr     - widthBy4)));
-						
-						Memory.setByte(addr + 8,  Memory.getByte(scratchAddr + 9 ) - paethPredictor(Memory.getByte(scratchAddr + 5), Memory.getByte(scratchAddr + 9  - widthBy4), Memory.getByte(scratchAddr + 5 - widthBy4)));
-						Memory.setByte(addr + 9,  Memory.getByte(scratchAddr + 10) - paethPredictor(Memory.getByte(scratchAddr + 6), Memory.getByte(scratchAddr + 10 - widthBy4), Memory.getByte(scratchAddr + 6 - widthBy4)));
-						Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 11) - paethPredictor(Memory.getByte(scratchAddr + 7), Memory.getByte(scratchAddr + 11 - widthBy4), Memory.getByte(scratchAddr + 7 - widthBy4)));
-						Memory.setByte(addr + 11, Memory.getByte(scratchAddr + 8 ) - paethPredictor(Memory.getByte(scratchAddr + 4), Memory.getByte(scratchAddr + 8  - widthBy4), Memory.getByte(scratchAddr + 4 - widthBy4)));
-						
-						Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 13) - paethPredictor(Memory.getByte(scratchAddr + 9 ), Memory.getByte(scratchAddr + 13 - widthBy4), Memory.getByte(scratchAddr + 9  - widthBy4)));
-						Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 14) - paethPredictor(Memory.getByte(scratchAddr + 10), Memory.getByte(scratchAddr + 14 - widthBy4), Memory.getByte(scratchAddr + 10 - widthBy4)));
-						Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 15) - paethPredictor(Memory.getByte(scratchAddr + 11), Memory.getByte(scratchAddr + 15 - widthBy4), Memory.getByte(scratchAddr + 11 - widthBy4)));
-						Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 12) - paethPredictor(Memory.getByte(scratchAddr + 8 ), Memory.getByte(scratchAddr + 12 - widthBy4), Memory.getByte(scratchAddr + 8  - widthBy4)));
-						
-						Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 17) - paethPredictor(Memory.getByte(scratchAddr + 13), Memory.getByte(scratchAddr + 17 - widthBy4), Memory.getByte(scratchAddr + 13 - widthBy4)));
-						Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 18) - paethPredictor(Memory.getByte(scratchAddr + 14), Memory.getByte(scratchAddr + 18 - widthBy4), Memory.getByte(scratchAddr + 14 - widthBy4)));
-						Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 19) - paethPredictor(Memory.getByte(scratchAddr + 15), Memory.getByte(scratchAddr + 19 - widthBy4), Memory.getByte(scratchAddr + 15 - widthBy4)));
-						Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 16) - paethPredictor(Memory.getByte(scratchAddr + 12), Memory.getByte(scratchAddr + 16 - widthBy4), Memory.getByte(scratchAddr + 12 - widthBy4)));
-						
-						Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 21) - paethPredictor(Memory.getByte(scratchAddr + 17), Memory.getByte(scratchAddr + 21 - widthBy4), Memory.getByte(scratchAddr + 17 - widthBy4)));
-						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 22) - paethPredictor(Memory.getByte(scratchAddr + 18), Memory.getByte(scratchAddr + 22 - widthBy4), Memory.getByte(scratchAddr + 18 - widthBy4)));
-						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 23) - paethPredictor(Memory.getByte(scratchAddr + 19), Memory.getByte(scratchAddr + 23 - widthBy4), Memory.getByte(scratchAddr + 19 - widthBy4)));
-						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 20) - paethPredictor(Memory.getByte(scratchAddr + 16), Memory.getByte(scratchAddr + 20 - widthBy4), Memory.getByte(scratchAddr + 16 - widthBy4)));
-						
-						Memory.setByte(addr + 24, Memory.getByte(scratchAddr + 25) - paethPredictor(Memory.getByte(scratchAddr + 21), Memory.getByte(scratchAddr + 25 - widthBy4), Memory.getByte(scratchAddr + 21 - widthBy4)));
-						Memory.setByte(addr + 25, Memory.getByte(scratchAddr + 26) - paethPredictor(Memory.getByte(scratchAddr + 22), Memory.getByte(scratchAddr + 26 - widthBy4), Memory.getByte(scratchAddr + 22 - widthBy4)));
-						Memory.setByte(addr + 26, Memory.getByte(scratchAddr + 27) - paethPredictor(Memory.getByte(scratchAddr + 23), Memory.getByte(scratchAddr + 27 - widthBy4), Memory.getByte(scratchAddr + 23 - widthBy4)));
-						Memory.setByte(addr + 27, Memory.getByte(scratchAddr + 24) - paethPredictor(Memory.getByte(scratchAddr + 20), Memory.getByte(scratchAddr + 24 - widthBy4), Memory.getByte(scratchAddr + 20 - widthBy4)));
-						
-						Memory.setByte(addr + 28, Memory.getByte(scratchAddr + 29) - paethPredictor(Memory.getByte(scratchAddr + 25), Memory.getByte(scratchAddr + 29 - widthBy4), Memory.getByte(scratchAddr + 25 - widthBy4)));
-						Memory.setByte(addr + 29, Memory.getByte(scratchAddr + 30) - paethPredictor(Memory.getByte(scratchAddr + 26), Memory.getByte(scratchAddr + 30 - widthBy4), Memory.getByte(scratchAddr + 26 - widthBy4)));
-						Memory.setByte(addr + 30, Memory.getByte(scratchAddr + 31) - paethPredictor(Memory.getByte(scratchAddr + 27), Memory.getByte(scratchAddr + 31 - widthBy4), Memory.getByte(scratchAddr + 27 - widthBy4)));
-						Memory.setByte(addr + 31, Memory.getByte(scratchAddr + 28) - paethPredictor(Memory.getByte(scratchAddr + 24), Memory.getByte(scratchAddr + 28 - widthBy4), Memory.getByte(scratchAddr + 24 - widthBy4)));
-						
-						addr += 32;
-						scratchAddr += 32;
-						j += 8;
+					while (addr != endAddr64) {
+						Memory.setI32(addr, rotr8(byteSub4(Memory.getI32(scratchAddr), paethPredictor4(Memory.getI32(scratchAddr - 4), Memory.getI32(scratchAddr - widthBy4), Memory.getI32(scratchAddr - 4 - widthBy4)))));
+						Memory.setI32(addr + 4, rotr8(byteSub4(Memory.getI32(scratchAddr + 4), paethPredictor4(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr + 4 - widthBy4), Memory.getI32(scratchAddr - widthBy4)))));
+						Memory.setI32(addr + 8, rotr8(byteSub4(Memory.getI32(scratchAddr + 8), paethPredictor4(Memory.getI32(scratchAddr + 4), Memory.getI32(scratchAddr + 8 - widthBy4), Memory.getI32(scratchAddr + 4 - widthBy4)))));
+						Memory.setI32(addr + 12, rotr8(byteSub4(Memory.getI32(scratchAddr + 12), paethPredictor4(Memory.getI32(scratchAddr + 8), Memory.getI32(scratchAddr + 12 - widthBy4), Memory.getI32(scratchAddr + 8 - widthBy4)))));
+						Memory.setI32(addr + 16, rotr8(byteSub4(Memory.getI32(scratchAddr + 16), paethPredictor4(Memory.getI32(scratchAddr + 12), Memory.getI32(scratchAddr + 16 - widthBy4), Memory.getI32(scratchAddr + 12 - widthBy4)))));
+						Memory.setI32(addr + 20, rotr8(byteSub4(Memory.getI32(scratchAddr + 20), paethPredictor4(Memory.getI32(scratchAddr + 16), Memory.getI32(scratchAddr + 20 - widthBy4), Memory.getI32(scratchAddr + 16 - widthBy4)))));
+						Memory.setI32(addr + 24, rotr8(byteSub4(Memory.getI32(scratchAddr + 24), paethPredictor4(Memory.getI32(scratchAddr + 20), Memory.getI32(scratchAddr + 24 - widthBy4), Memory.getI32(scratchAddr + 20 - widthBy4)))));
+						Memory.setI32(addr + 28, rotr8(byteSub4(Memory.getI32(scratchAddr + 28), paethPredictor4(Memory.getI32(scratchAddr + 24), Memory.getI32(scratchAddr + 28 - widthBy4), Memory.getI32(scratchAddr + 24 - widthBy4)))));
+						Memory.setI32(addr + 32, rotr8(byteSub4(Memory.getI32(scratchAddr + 32), paethPredictor4(Memory.getI32(scratchAddr + 28), Memory.getI32(scratchAddr + 32 - widthBy4), Memory.getI32(scratchAddr + 28 - widthBy4)))));
+						Memory.setI32(addr + 36, rotr8(byteSub4(Memory.getI32(scratchAddr + 36), paethPredictor4(Memory.getI32(scratchAddr + 32), Memory.getI32(scratchAddr + 36 - widthBy4), Memory.getI32(scratchAddr + 32 - widthBy4)))));
+						Memory.setI32(addr + 40, rotr8(byteSub4(Memory.getI32(scratchAddr + 40), paethPredictor4(Memory.getI32(scratchAddr + 36), Memory.getI32(scratchAddr + 40 - widthBy4), Memory.getI32(scratchAddr + 36 - widthBy4)))));
+						Memory.setI32(addr + 44, rotr8(byteSub4(Memory.getI32(scratchAddr + 44), paethPredictor4(Memory.getI32(scratchAddr + 40), Memory.getI32(scratchAddr + 44 - widthBy4), Memory.getI32(scratchAddr + 40 - widthBy4)))));
+						Memory.setI32(addr + 48, rotr8(byteSub4(Memory.getI32(scratchAddr + 48), paethPredictor4(Memory.getI32(scratchAddr + 44), Memory.getI32(scratchAddr + 48 - widthBy4), Memory.getI32(scratchAddr + 44 - widthBy4)))));
+						Memory.setI32(addr + 52, rotr8(byteSub4(Memory.getI32(scratchAddr + 52), paethPredictor4(Memory.getI32(scratchAddr + 48), Memory.getI32(scratchAddr + 52 - widthBy4), Memory.getI32(scratchAddr + 48 - widthBy4)))));
+						Memory.setI32(addr + 56, rotr8(byteSub4(Memory.getI32(scratchAddr + 56), paethPredictor4(Memory.getI32(scratchAddr + 52), Memory.getI32(scratchAddr + 56 - widthBy4), Memory.getI32(scratchAddr + 52 - widthBy4)))));
+						Memory.setI32(addr + 60, rotr8(byteSub4(Memory.getI32(scratchAddr + 60), paethPredictor4(Memory.getI32(scratchAddr + 56), Memory.getI32(scratchAddr + 60 - widthBy4), Memory.getI32(scratchAddr + 56 - widthBy4)))));
+						addr += 64;
+						scratchAddr += 64;
 					}
-					
-					while (j < width) {
-						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - paethPredictor(Memory.getByte(scratchAddr - 3), Memory.getByte(scratchAddr + 1 - widthBy4), Memory.getByte(scratchAddr - 3 - widthBy4)));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - paethPredictor(Memory.getByte(scratchAddr - 2), Memory.getByte(scratchAddr + 2 - widthBy4), Memory.getByte(scratchAddr - 2 - widthBy4)));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - paethPredictor(Memory.getByte(scratchAddr - 1), Memory.getByte(scratchAddr + 3 - widthBy4), Memory.getByte(scratchAddr - 1 - widthBy4)));
-						Memory.setByte(addr + 3, Memory.getByte(scratchAddr    ) - paethPredictor(Memory.getByte(scratchAddr - 4), Memory.getByte(scratchAddr     - widthBy4), Memory.getByte(scratchAddr - 4 - widthBy4)));
-						
+					while (addr != endAddr) {
+						Memory.setI32(addr, rotr8(byteSub4(Memory.getI32(scratchAddr), paethPredictor4(Memory.getI32(scratchAddr - 4), Memory.getI32(scratchAddr - widthBy4), Memory.getI32(scratchAddr - 4 - widthBy4)))));
 						addr += 4;
 						scratchAddr += 4;
-						++j;
 					}
 				}
 			}
@@ -1173,59 +1084,42 @@ class PNGEncoder2 extends EventDispatcher
 				
 				if (width > 0 && height > 0) {
 					// Do first pixel (3 bytes) manually (sub formula is different)
-					Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2));
+					Memory.setI16(addr, Memory.getUI16(scratchAddr + 1));
 					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3));
+					endAddr = addr + width * 3;
 					addr += 3;
 					scratchAddr += 4;
 					
-					// Copy line
-					j = 1;
-					while (j < end8) {
-						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
-						
-						Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 5) - Memory.getByte(scratchAddr + 1));
-						Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 6) - Memory.getByte(scratchAddr + 2));
-						Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 7) - Memory.getByte(scratchAddr + 3));
-						
-						Memory.setByte(addr + 6, Memory.getByte(scratchAddr +  9) - Memory.getByte(scratchAddr + 5));
-						Memory.setByte(addr + 7, Memory.getByte(scratchAddr + 10) - Memory.getByte(scratchAddr + 6));
-						Memory.setByte(addr + 8, Memory.getByte(scratchAddr + 11) - Memory.getByte(scratchAddr + 7));
-						
-						Memory.setByte(addr +  9, Memory.getByte(scratchAddr + 13) - Memory.getByte(scratchAddr +  9));
-						Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 14) - Memory.getByte(scratchAddr + 10));
-						Memory.setByte(addr + 11, Memory.getByte(scratchAddr + 15) - Memory.getByte(scratchAddr + 11));
-						
-						Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 17) - Memory.getByte(scratchAddr + 13));
-						Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 18) - Memory.getByte(scratchAddr + 14));
-						Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 19) - Memory.getByte(scratchAddr + 15));
-						
-						Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 21) - Memory.getByte(scratchAddr + 17));
-						Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 22) - Memory.getByte(scratchAddr + 18));
-						Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 23) - Memory.getByte(scratchAddr + 19));
-						
-						Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 25) - Memory.getByte(scratchAddr + 21));
-						Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 26) - Memory.getByte(scratchAddr + 22));
-						Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 27) - Memory.getByte(scratchAddr + 23));
-						
-						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 29) - Memory.getByte(scratchAddr + 25));
-						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 30) - Memory.getByte(scratchAddr + 26));
-						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 31) - Memory.getByte(scratchAddr + 27));
-						
-						addr += 24;
-						scratchAddr += 32;
-						j += 8;
+					// Copy line.
+					// Offset scratch address so that the extra byte that we read goes into the right (unused) spot
+					++scratchAddr;
+					endAddr64 = scratchAddr + ((width * 3 - 1) & 0xFFFFFFC0);
+					while (scratchAddr != endAddr64) {
+						Memory.setI32(addr, byteSub4(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr - 4)));
+						Memory.setI32(addr + 3, byteSub4(Memory.getI32(scratchAddr + 4), Memory.getI32(scratchAddr)));
+						Memory.setI32(addr + 6, byteSub4(Memory.getI32(scratchAddr + 8), Memory.getI32(scratchAddr + 4)));
+						Memory.setI32(addr + 9, byteSub4(Memory.getI32(scratchAddr + 12), Memory.getI32(scratchAddr + 8)));
+						Memory.setI32(addr + 12, byteSub4(Memory.getI32(scratchAddr + 16), Memory.getI32(scratchAddr + 12)));
+						Memory.setI32(addr + 15, byteSub4(Memory.getI32(scratchAddr + 20), Memory.getI32(scratchAddr + 16)));
+						Memory.setI32(addr + 18, byteSub4(Memory.getI32(scratchAddr + 24), Memory.getI32(scratchAddr + 20)));
+						Memory.setI32(addr + 21, byteSub4(Memory.getI32(scratchAddr + 28), Memory.getI32(scratchAddr + 24)));
+						Memory.setI32(addr + 24, byteSub4(Memory.getI32(scratchAddr + 32), Memory.getI32(scratchAddr + 28)));
+						Memory.setI32(addr + 27, byteSub4(Memory.getI32(scratchAddr + 36), Memory.getI32(scratchAddr + 32)));
+						Memory.setI32(addr + 30, byteSub4(Memory.getI32(scratchAddr + 40), Memory.getI32(scratchAddr + 36)));
+						Memory.setI32(addr + 33, byteSub4(Memory.getI32(scratchAddr + 44), Memory.getI32(scratchAddr + 40)));
+						Memory.setI32(addr + 36, byteSub4(Memory.getI32(scratchAddr + 48), Memory.getI32(scratchAddr + 44)));
+						Memory.setI32(addr + 39, byteSub4(Memory.getI32(scratchAddr + 52), Memory.getI32(scratchAddr + 48)));
+						Memory.setI32(addr + 42, byteSub4(Memory.getI32(scratchAddr + 56), Memory.getI32(scratchAddr + 52)));
+						Memory.setI32(addr + 45, byteSub4(Memory.getI32(scratchAddr + 60), Memory.getI32(scratchAddr + 56)));
+						addr += 48;
+						scratchAddr += 64;
 					}
-					while (j < width) {
-						Memory.setByte(addr + 0, Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr - 3));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr - 2));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr - 1));
+					while (addr != endAddr) {
+						Memory.setI32(addr, byteSub4(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr - 4)));
 						addr += 3;
 						scratchAddr += 4;
-						++j;
 					}
+					--scratchAddr;
 				}
 			}
 			
@@ -1236,61 +1130,40 @@ class PNGEncoder2 extends EventDispatcher
 				
 				if (width > 0) {
 					// Do first pixel (3 bytes) manually (formula is different)
-					Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - Memory.getByte(scratchAddr + 1 - widthBy4));
-					Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - Memory.getByte(scratchAddr + 2 - widthBy4));
-					Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - Memory.getByte(scratchAddr + 3 - widthBy4));
+					Memory.setI32(addr, byteSub4(Memory.getI32(scratchAddr + 1), Memory.getI32(scratchAddr + 1 - widthBy4)));
+					endAddr = addr + width * 3;
 					addr += 3;
 					scratchAddr += 4;
-				
-					// Copy line, applying filter
-					j = 1;
-					while (j < end8) {
-						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - paethPredictor(Memory.getByte(scratchAddr - 3), Memory.getByte(scratchAddr + 1 - widthBy4), Memory.getByte(scratchAddr - 3 - widthBy4)));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - paethPredictor(Memory.getByte(scratchAddr - 2), Memory.getByte(scratchAddr + 2 - widthBy4), Memory.getByte(scratchAddr - 2 - widthBy4)));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - paethPredictor(Memory.getByte(scratchAddr - 1), Memory.getByte(scratchAddr + 3 - widthBy4), Memory.getByte(scratchAddr - 1 - widthBy4)));
-						
-						Memory.setByte(addr + 3, Memory.getByte(scratchAddr + 5) - paethPredictor(Memory.getByte(scratchAddr + 1), Memory.getByte(scratchAddr + 5 - widthBy4), Memory.getByte(scratchAddr + 1 - widthBy4)));
-						Memory.setByte(addr + 4, Memory.getByte(scratchAddr + 6) - paethPredictor(Memory.getByte(scratchAddr + 2), Memory.getByte(scratchAddr + 6 - widthBy4), Memory.getByte(scratchAddr + 2 - widthBy4)));
-						Memory.setByte(addr + 5, Memory.getByte(scratchAddr + 7) - paethPredictor(Memory.getByte(scratchAddr + 3), Memory.getByte(scratchAddr + 7 - widthBy4), Memory.getByte(scratchAddr + 3 - widthBy4)));
-						
-						Memory.setByte(addr + 6,  Memory.getByte(scratchAddr + 9 ) - paethPredictor(Memory.getByte(scratchAddr + 5), Memory.getByte(scratchAddr + 9  - widthBy4), Memory.getByte(scratchAddr + 5 - widthBy4)));
-						Memory.setByte(addr + 7,  Memory.getByte(scratchAddr + 10) - paethPredictor(Memory.getByte(scratchAddr + 6), Memory.getByte(scratchAddr + 10 - widthBy4), Memory.getByte(scratchAddr + 6 - widthBy4)));
-						Memory.setByte(addr + 8, Memory.getByte(scratchAddr + 11) - paethPredictor(Memory.getByte(scratchAddr + 7), Memory.getByte(scratchAddr + 11 - widthBy4), Memory.getByte(scratchAddr + 7 - widthBy4)));
-						
-						Memory.setByte(addr + 9,  Memory.getByte(scratchAddr + 13) - paethPredictor(Memory.getByte(scratchAddr + 9 ), Memory.getByte(scratchAddr + 13 - widthBy4), Memory.getByte(scratchAddr + 9  - widthBy4)));
-						Memory.setByte(addr + 10, Memory.getByte(scratchAddr + 14) - paethPredictor(Memory.getByte(scratchAddr + 10), Memory.getByte(scratchAddr + 14 - widthBy4), Memory.getByte(scratchAddr + 10 - widthBy4)));
-						Memory.setByte(addr + 11, Memory.getByte(scratchAddr + 15) - paethPredictor(Memory.getByte(scratchAddr + 11), Memory.getByte(scratchAddr + 15 - widthBy4), Memory.getByte(scratchAddr + 11 - widthBy4)));
-						
-						Memory.setByte(addr + 12, Memory.getByte(scratchAddr + 17) - paethPredictor(Memory.getByte(scratchAddr + 13), Memory.getByte(scratchAddr + 17 - widthBy4), Memory.getByte(scratchAddr + 13 - widthBy4)));
-						Memory.setByte(addr + 13, Memory.getByte(scratchAddr + 18) - paethPredictor(Memory.getByte(scratchAddr + 14), Memory.getByte(scratchAddr + 18 - widthBy4), Memory.getByte(scratchAddr + 14 - widthBy4)));
-						Memory.setByte(addr + 14, Memory.getByte(scratchAddr + 19) - paethPredictor(Memory.getByte(scratchAddr + 15), Memory.getByte(scratchAddr + 19 - widthBy4), Memory.getByte(scratchAddr + 15 - widthBy4)));
-						
-						Memory.setByte(addr + 15, Memory.getByte(scratchAddr + 21) - paethPredictor(Memory.getByte(scratchAddr + 17), Memory.getByte(scratchAddr + 21 - widthBy4), Memory.getByte(scratchAddr + 17 - widthBy4)));
-						Memory.setByte(addr + 16, Memory.getByte(scratchAddr + 22) - paethPredictor(Memory.getByte(scratchAddr + 18), Memory.getByte(scratchAddr + 22 - widthBy4), Memory.getByte(scratchAddr + 18 - widthBy4)));
-						Memory.setByte(addr + 17, Memory.getByte(scratchAddr + 23) - paethPredictor(Memory.getByte(scratchAddr + 19), Memory.getByte(scratchAddr + 23 - widthBy4), Memory.getByte(scratchAddr + 19 - widthBy4)));
-						
-						Memory.setByte(addr + 18, Memory.getByte(scratchAddr + 25) - paethPredictor(Memory.getByte(scratchAddr + 21), Memory.getByte(scratchAddr + 25 - widthBy4), Memory.getByte(scratchAddr + 21 - widthBy4)));
-						Memory.setByte(addr + 19, Memory.getByte(scratchAddr + 26) - paethPredictor(Memory.getByte(scratchAddr + 22), Memory.getByte(scratchAddr + 26 - widthBy4), Memory.getByte(scratchAddr + 22 - widthBy4)));
-						Memory.setByte(addr + 20, Memory.getByte(scratchAddr + 27) - paethPredictor(Memory.getByte(scratchAddr + 23), Memory.getByte(scratchAddr + 27 - widthBy4), Memory.getByte(scratchAddr + 23 - widthBy4)));
-						
-						Memory.setByte(addr + 21, Memory.getByte(scratchAddr + 29) - paethPredictor(Memory.getByte(scratchAddr + 25), Memory.getByte(scratchAddr + 29 - widthBy4), Memory.getByte(scratchAddr + 25 - widthBy4)));
-						Memory.setByte(addr + 22, Memory.getByte(scratchAddr + 30) - paethPredictor(Memory.getByte(scratchAddr + 26), Memory.getByte(scratchAddr + 30 - widthBy4), Memory.getByte(scratchAddr + 26 - widthBy4)));
-						Memory.setByte(addr + 23, Memory.getByte(scratchAddr + 31) - paethPredictor(Memory.getByte(scratchAddr + 27), Memory.getByte(scratchAddr + 31 - widthBy4), Memory.getByte(scratchAddr + 27 - widthBy4)));
-						
-						addr += 24;
-						scratchAddr += 32;
-						j += 8;
-					}
 					
-					while (j < width) {
-						Memory.setByte(addr    , Memory.getByte(scratchAddr + 1) - paethPredictor(Memory.getByte(scratchAddr - 3), Memory.getByte(scratchAddr + 1 - widthBy4), Memory.getByte(scratchAddr - 3 - widthBy4)));
-						Memory.setByte(addr + 1, Memory.getByte(scratchAddr + 2) - paethPredictor(Memory.getByte(scratchAddr - 2), Memory.getByte(scratchAddr + 2 - widthBy4), Memory.getByte(scratchAddr - 2 - widthBy4)));
-						Memory.setByte(addr + 2, Memory.getByte(scratchAddr + 3) - paethPredictor(Memory.getByte(scratchAddr - 1), Memory.getByte(scratchAddr + 3 - widthBy4), Memory.getByte(scratchAddr - 1 - widthBy4)));
-						
+					// Copy line, applying filter
+					++scratchAddr;
+					endAddr64 = scratchAddr + ((width * 3 - 1) & 0xFFFFFFC0);
+					while (scratchAddr != endAddr64) {
+						Memory.setI32(addr, byteSub4(Memory.getI32(scratchAddr), paethPredictor3Lo(Memory.getI32(scratchAddr - 4), Memory.getI32(scratchAddr - widthBy4), Memory.getI32(scratchAddr - 4 - widthBy4))));
+						Memory.setI32(addr + 3, byteSub4(Memory.getI32(scratchAddr + 4), paethPredictor3Lo(Memory.getI32(scratchAddr), Memory.getI32(scratchAddr + 4 - widthBy4), Memory.getI32(scratchAddr - widthBy4))));
+						Memory.setI32(addr + 6, byteSub4(Memory.getI32(scratchAddr + 8), paethPredictor3Lo(Memory.getI32(scratchAddr + 4), Memory.getI32(scratchAddr + 8 - widthBy4), Memory.getI32(scratchAddr + 4 - widthBy4))));
+						Memory.setI32(addr + 9,  byteSub4(Memory.getI32(scratchAddr + 12), paethPredictor3Lo(Memory.getI32(scratchAddr + 8), Memory.getI32(scratchAddr + 12 - widthBy4), Memory.getI32(scratchAddr + 8 - widthBy4))));
+						Memory.setI32(addr + 12, byteSub4(Memory.getI32(scratchAddr + 16), paethPredictor3Lo(Memory.getI32(scratchAddr + 12), Memory.getI32(scratchAddr + 16 - widthBy4), Memory.getI32(scratchAddr + 12 - widthBy4))));
+						Memory.setI32(addr + 15, byteSub4(Memory.getI32(scratchAddr + 20), paethPredictor3Lo(Memory.getI32(scratchAddr + 16), Memory.getI32(scratchAddr + 20 - widthBy4), Memory.getI32(scratchAddr + 16 - widthBy4))));
+						Memory.setI32(addr + 18, byteSub4(Memory.getI32(scratchAddr + 24), paethPredictor3Lo(Memory.getI32(scratchAddr + 20), Memory.getI32(scratchAddr + 24 - widthBy4), Memory.getI32(scratchAddr + 20 - widthBy4))));
+						Memory.setI32(addr + 21, byteSub4(Memory.getI32(scratchAddr + 28), paethPredictor3Lo(Memory.getI32(scratchAddr + 24), Memory.getI32(scratchAddr + 28 - widthBy4), Memory.getI32(scratchAddr + 24 - widthBy4))));
+						Memory.setI32(addr + 24, byteSub4(Memory.getI32(scratchAddr + 32), paethPredictor3Lo(Memory.getI32(scratchAddr + 28), Memory.getI32(scratchAddr + 32 - widthBy4), Memory.getI32(scratchAddr + 28 - widthBy4))));
+						Memory.setI32(addr + 27, byteSub4(Memory.getI32(scratchAddr + 36), paethPredictor3Lo(Memory.getI32(scratchAddr + 32), Memory.getI32(scratchAddr + 36 - widthBy4), Memory.getI32(scratchAddr + 32 - widthBy4))));
+						Memory.setI32(addr + 30, byteSub4(Memory.getI32(scratchAddr + 40), paethPredictor3Lo(Memory.getI32(scratchAddr + 36), Memory.getI32(scratchAddr + 40 - widthBy4), Memory.getI32(scratchAddr + 36 - widthBy4))));
+						Memory.setI32(addr + 33, byteSub4(Memory.getI32(scratchAddr + 44), paethPredictor3Lo(Memory.getI32(scratchAddr + 40), Memory.getI32(scratchAddr + 44 - widthBy4), Memory.getI32(scratchAddr + 40 - widthBy4))));
+						Memory.setI32(addr + 36, byteSub4(Memory.getI32(scratchAddr + 48), paethPredictor3Lo(Memory.getI32(scratchAddr + 44), Memory.getI32(scratchAddr + 48 - widthBy4), Memory.getI32(scratchAddr + 44 - widthBy4))));
+						Memory.setI32(addr + 39, byteSub4(Memory.getI32(scratchAddr + 52), paethPredictor3Lo(Memory.getI32(scratchAddr + 48), Memory.getI32(scratchAddr + 52 - widthBy4), Memory.getI32(scratchAddr + 48 - widthBy4))));
+						Memory.setI32(addr + 42, byteSub4(Memory.getI32(scratchAddr + 56), paethPredictor3Lo(Memory.getI32(scratchAddr + 52), Memory.getI32(scratchAddr + 56 - widthBy4), Memory.getI32(scratchAddr + 52 - widthBy4))));
+						Memory.setI32(addr + 45, byteSub4(Memory.getI32(scratchAddr + 60), paethPredictor3Lo(Memory.getI32(scratchAddr + 56), Memory.getI32(scratchAddr + 60 - widthBy4), Memory.getI32(scratchAddr + 56 - widthBy4))));
+						addr += 48;
+						scratchAddr += 64;
+					}
+					while (addr != endAddr) {
+						Memory.setI32(addr, byteSub4(Memory.getI32(scratchAddr), paethPredictor3Lo(Memory.getI32(scratchAddr - 4), Memory.getI32(scratchAddr - widthBy4), Memory.getI32(scratchAddr - 4 - widthBy4))));
 						addr += 3;
 						scratchAddr += 4;
-						++j;
 					}
+					--scratchAddr;
 				}
 			}
 		}
@@ -1306,8 +1179,14 @@ class PNGEncoder2 extends EventDispatcher
 		}
 	}
 	
+	private static inline function rotr8(x) { return (x >>> 8) | (x << 24); }
 	
-	private static inline function paethPredictor(a, b, c)
+	private static inline function byteSub4(a : UInt, b : UInt)
+	{
+		return ((((a & 0xFF00FF00) | 0x00010000) - (b & 0xFF00FF00)) & 0xFF00FF00) | ((((a & 0x00FF00FF) | 0x01000100) - (b & 0x00FF00FF)) & 0x00FF00FF);
+	}
+	
+	/*private static inline function paethPredictor(a, b, c)
 	{
 		// a = left, b = above, c = upper left
 		var p = a + b - c;        // initial estimate
@@ -1321,6 +1200,60 @@ class PNGEncoder2 extends EventDispatcher
 		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
 		var notACond = ((pb - pa) | (pc - pa)) >> 31;
 		var notBCond = (pc - pb) >> 31;
+		return (a & ~notACond) | (b & notACond & ~notBCond) | (c & notACond & notBCond);
+	}*/
+	
+	private static inline function paethPredictor4(a : Int, b : Int, c : Int)
+	{
+		var pa = abs((b & 0x000000FF) - (c & 0x000000FF));
+		var pb = abs((a & 0x000000FF) - (c & 0x000000FF));
+		var pc = abs((a & 0x000000FF) + (b & 0x000000FF) - ((c << 1) & 0x000001FE));
+		var notACond = (((pb - pa) | (pc - pa)) >> 31) & 0x000000FF;
+		var notBCond = ((pc - pb) >> 31) & 0x000000FF;
+		
+		pa = abs((b & 0x0000FF00) - (c & 0x0000FF00));
+		pb = abs((a & 0x0000FF00) - (c & 0x0000FF00));
+		pc = abs((a & 0x0000FF00) + (b & 0x0000FF00) - ((c << 1) & 0x0001FE00));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x0000FF00;
+		notBCond |= ((pc - pb) >> 31) & 0x0000FF00;
+		
+		pa = abs((b & 0x00FF0000) - (c & 0x00FF0000));
+		pb = abs((a & 0x00FF0000) - (c & 0x00FF0000));
+		pc = abs((a & 0x00FF0000) + (b & 0x00FF0000) - ((c << 1) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x00FF0000;
+		notBCond |= ((pc - pb) >> 31) & 0x00FF0000;
+		
+		pa = abs(((b >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
+		pb = abs(((a >> 8) & 0x00FF0000) - ((c >> 8) & 0x00FF0000));
+		pc = abs(((a >> 8) & 0x00FF0000) + ((b >> 8) & 0x00FF0000) - ((c >> 7) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0xFF000000;
+		notBCond |= ((pc - pb) >> 31) & 0xFF000000;
+		
+		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
+		return (a & ~notACond) | (b & notACond & ~notBCond) | (c & notACond & notBCond);
+	}
+	
+	private static inline function paethPredictor3Lo(a : Int, b : Int, c : Int)
+	{
+		var pa = abs((b & 0x000000FF) - (c & 0x000000FF));
+		var pb = abs((a & 0x000000FF) - (c & 0x000000FF));
+		var pc = abs((a & 0x000000FF) + (b & 0x000000FF) - ((c << 1) & 0x000001FE));
+		var notACond = (((pb - pa) | (pc - pa)) >> 31) & 0x000000FF;
+		var notBCond = ((pc - pb) >> 31) & 0x000000FF;
+		
+		pa = abs((b & 0x0000FF00) - (c & 0x0000FF00));
+		pb = abs((a & 0x0000FF00) - (c & 0x0000FF00));
+		pc = abs((a & 0x0000FF00) + (b & 0x0000FF00) - ((c << 1) & 0x0001FE00));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x0000FF00;
+		notBCond |= ((pc - pb) >> 31) & 0x0000FF00;
+		
+		pa = abs((b & 0x00FF0000) - (c & 0x00FF0000));
+		pb = abs((a & 0x00FF0000) - (c & 0x00FF0000));
+		pc = abs((a & 0x00FF0000) + (b & 0x00FF0000) - ((c << 1) & 0x01FE0000));
+		notACond |= (((pb - pa) | (pc - pa)) >> 31) & 0x00FF0000;
+		notBCond |= ((pc - pb) >> 31) & 0x00FF0000;
+		
+		//return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
 		return (a & ~notACond) | (b & notACond & ~notBCond) | (c & notACond & notBCond);
 	}
 	
