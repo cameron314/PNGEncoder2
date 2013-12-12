@@ -67,6 +67,9 @@ class PNGEncoder2 extends EventDispatcher
 	public static var level : CompressionLevel;
 	
 	// Provide both HaXe and AS3 properties to access the target FPS (read/write)
+	@:protected private inline function get_png() { return __impl.png; }
+	@:protected public var png(get_png, null) : IDataOutput;
+	@:getter(png) private function flGetPng() { return get_png(); }
 	@:protected private inline function get_targetFPS() { return __impl.targetFPS; }
 	@:protected private inline function set_targetFPS(fps : Int) { return __impl.targetFPS = fps; }
 	@:protected public var targetFPS(get_targetFPS, set_targetFPS) : Int;
@@ -567,6 +570,7 @@ class PNGEncoder2 extends EventDispatcher
 		img = image;
 		this.png = png;
 		this.dispatcher = dispatcher;
+		targetFPS = 20;		// Default, can be overridden
 		
 		if (encoding) {
 			// Add to queue for later!
@@ -589,7 +593,6 @@ class PNGEncoder2 extends EventDispatcher
 			msPerLineIndex = 0;
 			updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
 			updatesPerFrameIndex = 0;
-			targetFPS = 20;		// Default, can be overridden
 			
 			// Note that this effectively freezes the compression level for the
 			// duration of the encoding (even if the static level member changes)

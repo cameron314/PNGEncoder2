@@ -139,8 +139,8 @@ class Test extends Sprite
 					that.png = new ByteArray();
 					that.encoder = PNGEncoder2.encodeAsync(bmp, that.png);
 					var startTime = Lib.getTimer();
-					that.encoder.addEventListener(Event.COMPLETE, function (e) {
-						var percent = 100 - that.png.length / (bmp.width * bmp.height * 4) * 100;
+					that.encoder.addEventListener(Event.COMPLETE, function (e : Event) {
+						var percent = 100 - e.target.png.length / (bmp.width * bmp.height * 4) * 100;
 						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
 						/*var loader = new Loader();
@@ -149,8 +149,8 @@ class Test extends Sprite
 						loader.x = 250;
 						loader.y = 250;*/
 						startTime = Lib.getTimer();
-						that.png.position = 0;
-						var decodedBitmapData = PNGEncoder2.decode(that.png);
+						e.target.png.position = 0;
+						var decodedBitmapData = PNGEncoder2.decode(e.target.png);
 						that.png.position = 0;
 						var decodedBitmap = new Bitmap(decodedBitmapData);
 						trace("Decode complete (" + (Lib.getTimer() - startTime) + "ms)");

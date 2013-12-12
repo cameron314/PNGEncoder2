@@ -1,6 +1,6 @@
 -cp .
 -swf Test.swf
--swf-version 10
 -swf-header 800:600:30:FFFFFF
+-swf-version 10
 -D DECODER
 -main Test
