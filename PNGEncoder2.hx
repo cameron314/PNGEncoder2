@@ -574,6 +574,7 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		img = image;
 		this.dispatcher = dispatcher;
+		targetFPS = 20;		// Default, can be overridden
 		
 		if (encoding) {
 			// Add to queue for later!
@@ -596,7 +597,6 @@ class PNGEncoder2 extends EventDispatcher
 			msPerLineIndex = 0;
 			updatesPerFrame = new Vector<Int>(FRAME_AVG_SMOOTH_COUNT, true);
 			updatesPerFrameIndex = 0;
-			targetFPS = 20;		// Default, can be overridden
 			
 			// Note that this effectively freezes the compression level for the
 			// duration of the encoding (even if the static level member changes)
