@@ -42,7 +42,6 @@ import flash.events.Event;
 import flash.events.EventDispatcher;
 import flash.events.IEventDispatcher;
 import flash.events.ProgressEvent;
-import flash.events.TimerEvent;
 import flash.geom.Rectangle;
 import flash.Lib;
 import flash.Memory;
@@ -156,6 +155,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
 	
 	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Number of frames to calculate averages from. Must be power of 2
+	private static inline var FIRST_UPDATE_PIXELS = 20 * 1024;			// Encode this many pixels right away on the first frame
 	private static inline var MIN_PIXELS_PER_UPDATE = 20 * 1024;		// Always compress at least this many pixels per chunk
 	private static var data : ByteArray;	// The select()ed working memory
 	private static var sprite : Sprite;		// Used purely to listen to ENTER_FRAME events
@@ -187,7 +187,6 @@ class PNGEncoder2 extends EventDispatcher
 	private var lastFrameStart : Int;				// Lib.getTimer() value. Used to calculate millisecond delta between two frames
 	private var step : Int;							// Number of scanlines to process during the next update (in order to approximate targetFPS, but without wasting cycles)
 	private var done : Bool;						// Whether there's any more scanlines to process or not
-	private var timer : Timer;						// Used to trigger an update as often as possible
 	
 	private var frameCount : Int;					// Total number of frames that have elapsed so far during the encoding
 	
@@ -562,6 +561,7 @@ class PNGEncoder2 extends EventDispatcher
 	
 	public inline function new(image : BitmapData, dispatcher : IEventDispatcher)
 	{
+		targetFPS = 20;					// Default, can be overridden
 		_new(image, dispatcher);		// Constructors are slow -- delegate to function
 	}
 	
@@ -570,11 +570,13 @@ class PNGEncoder2 extends EventDispatcher
 		fastNew(image, dispatcher);
 	}
 	
+	//private static var __frame : Int;
+	//private static function staticEnterFrame(e : Event) { ++__frame; }
+	
 	private inline function fastNew(image : BitmapData, dispatcher : IEventDispatcher)
 	{
 		img = image;
 		this.dispatcher = dispatcher;
-		targetFPS = 20;		// Default, can be overridden
 		
 		if (encoding) {
 			// Add to queue for later!
@@ -602,11 +604,13 @@ class PNGEncoder2 extends EventDispatcher
 			// duration of the encoding (even if the static level member changes)
 			deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
 			
-			// Get notified of new frames, and timer events
+			//if (!sprite.hasEventListener(Event.ENTER_FRAME)) {
+			//	sprite.addEventListener(Event.ENTER_FRAME, staticEnterFrame);
+			//}
+			//trace("Async encoding began on frame " + __frame);
+			
+			// Get notified of new frames
 			sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
-			timer = new Timer(1);		// Really means "update as often as possible"
-			timer.addEventListener(TimerEvent.TIMER, onTimer);
-			timer.start();
 			
 			// We write data in chunks (one per update), starting with one
 			// chunk right now in order to gather some statistics up front
@@ -621,7 +625,7 @@ class PNGEncoder2 extends EventDispatcher
 				var startTime = Lib.getTimer();
 				
 				// Write first ~20K pixels to see how fast it is
-				var height = Math.ceil(Math.min(20 * 1024 / img.width, img.height));
+				var height = Math.ceil(Math.min(FIRST_UPDATE_PIXELS / img.width, img.height));
 				writeIDATChunk(img, 0, height, deflateStream, png);
 				
 				var endTime = Lib.getTimer();
@@ -653,7 +657,7 @@ class PNGEncoder2 extends EventDispatcher
 	private inline function updateMsPerLine(ms : Int, lines : Int)
 	{
 		if (lines != 0) {
-			if (ms == 0) {
+			if (ms <= 0) {
 				// Can occasionally happen because timer resolution on Windows is limited to 10ms
 				ms = 5;		// Guess!
 			}
@@ -760,10 +764,6 @@ class PNGEncoder2 extends EventDispatcher
 	private function onEnterFrame(e : Event)
 	{
 		updateFrameInfo();
-	}
-	
-	private function onTimer(e : TimerEvent)
-	{
 		update();
 	}
 	
@@ -785,10 +785,10 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private inline function update()
 	{
-		// Need to check if we've finished or not since it's possible
-		// for the timer event to be dispatched before we stop it, but get
-		// processed after we've finished (e.g. if there's two timer events
-		// in the event queue and the first one finishes the work, the second
+		// Need to check if we've finished or not since it's possible (if we're
+		// attached to a timer) for a timer event to be dispatched before we stop
+		// it, but get processed after we've finished (e.g. if there's two timer
+		// events in the event queue and the first one finishes the work, the second
 		// will still cause this function to be entered since it was generated
 		// before we stopped the timer).
 		if (!done) {
@@ -845,9 +845,10 @@ class PNGEncoder2 extends EventDispatcher
 			}
 			
 			if (done) {
+				//trace("Async encoding finished on frame " + __frame + " (targetFPS was " + targetFPS + ")");
+				
 				// Clear some references to give the garbage collector an easier time
 				dispatcher = null;		// This removes a circular reference, which might save a mark-and-sweep step
-				timer = null;
 				img = null;
 				deflateStream = null;
 				msPerFrame = null;
@@ -873,8 +874,6 @@ class PNGEncoder2 extends EventDispatcher
 			done = true;
 			
 			sprite.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
-			timer.removeEventListener(TimerEvent.TIMER, onTimer);
-			timer.stop();
 			
 			endEncoding(png);
 			

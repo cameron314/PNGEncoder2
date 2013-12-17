@@ -15,8 +15,10 @@ import flash.text.TextField;
 import flash.text.TextFieldAutoSize;
 import flash.utils.ByteArray;
 import flash.utils.Timer;
+import flash.Vector;
 import PNGEncoder2;
 import DeflateStream;
+//import com.remixtechnology.SWFProfiler;
 
 class Test extends Sprite
 {
@@ -26,6 +28,7 @@ class Test extends Sprite
 	private var saveFileRef : FileReference;
 	private var loader : Loader;
 	private var encoder : PNGEncoder2;
+	private var encoders : Vector<PNGEncoder2>;
 	
 	public static function main()
 	{
@@ -35,6 +38,9 @@ class Test extends Sprite
 	public function new(?width : Int, ?height : Int)
 	{
 		super();
+		
+		//testManyQueuedSmallImages();
+		//return;
 		
 		//SWFProfiler.init();
 		//SWFProfiler.show();
@@ -142,7 +148,7 @@ class Test extends Sprite
 						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
 						/*var loader = new Loader();
-						loader.loadBytes(that.encoder.png);
+						loader.loadBytes(e.target.png);
 						that.addChild(loader);
 						loader.x = 250;
 						loader.y = 250;*/
@@ -194,6 +200,20 @@ class Test extends Sprite
 		trace("PNGEncoder:\t\t\t" + pngTime + "ms");
 		trace("PNGEncoder2:\t\t\t" + opPngTime + "ms");
 		trace("x better:\t\t\t\t\t" + round(1.0 * pngTime / opPngTime, 2) + "x\n");
+	}
+	
+	
+	private function testManyQueuedSmallImages()
+	{
+		var bmp = new BitmapData(80, 80, true, 0x00FFFFFF);
+		bmp.perlinNoise(80, 80, 2, 0xDEADBEEF, false, false);
+		
+		encoders = new Vector<PNGEncoder2>();
+		for (i in 0 ... 14) {
+			var encoder = PNGEncoder2.encodeAsync(bmp);
+			encoder.targetFPS = 13;
+			encoders.push(encoder);
+		}
 	}
 	
 	
