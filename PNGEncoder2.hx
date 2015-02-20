@@ -1,7 +1,7 @@
 /*
 	Copyright (c) 2008, Adobe Systems Incorporated
 	Copyright (c) 2011, Pimm Hogeling and Edo Rivai
-	Copyright (c) 2011, Cameron Desrochers
+	Copyright (c) 2011-2015, Cameron Desrochers
 	All rights reserved.
 
 	Redistribution and use in source and binary forms, with or without 
@@ -127,6 +127,18 @@ class PNGEncoder2 extends EventDispatcher
 		return PNGEncoder2Impl.decode(pngBytes);
 	}
 #end
+
+	/**
+	 * Clears any long-term cached memory (e.g. CRC tables) in order
+	 * to reduce memory usage. This is only needed in resource-constrained
+	 * environments; it's faster to leave the cache intact between
+	 * encodings.
+	*/
+	public static function freeCachedMemory()
+	{
+		PNGEncoder2Impl.freeCachedMemory();
+	}
+	
 	
 	private inline function new(image : BitmapData)
 	{
@@ -1379,5 +1391,22 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline function crcTable(index : Int) : Int
 	{
 		return Memory.getI32((index & 0xFF) << 2);
+	}
+	
+	public static inline function freeCachedMemory()
+	{
+		if (encoding) {
+			throw new Error("Cached resources cannot be freed while an image is being encoded");
+		}
+		
+		if (crcComputed) {
+			if (ApplicationDomain.currentDomain.domainMemory == data) {
+				Memory.select(null);
+			}
+			region = null;
+			sprite = null;
+			data = null;
+			crcComputed = false;
+		}
 	}
 }
