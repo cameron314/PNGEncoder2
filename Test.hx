@@ -144,6 +144,8 @@ class Test extends Sprite
 					that.encoder = PNGEncoder2.encodeAsync(bmp);
 					var startTime = Lib.getTimer();
 					that.encoder.addEventListener(Event.COMPLETE, function (e : Event) {
+						PNGEncoder2.freeCachedMemory();
+						
 						var percent = 100 - e.target.png.length / (bmp.width * bmp.height * 4) * 100;
 						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
