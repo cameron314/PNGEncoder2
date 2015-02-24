@@ -130,7 +130,7 @@ var png : ByteArray = PNGEncoder2.encodeWithMetadata(bmp, metadata);
 
 Every  key-value pair in the given metadata object will be encoded into
 the PNG as either a tEXt chunk (if the value can be represented in Latin-1)
-or an iTXt chunk (which support arbitrary Unicode strings).
+or an iTXt chunk (which supports arbitrary Unicode strings).
 
 
 Installation
