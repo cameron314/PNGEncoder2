@@ -160,7 +160,7 @@ class PNGEncoder2 extends EventDispatcher
 	 * property to access the encoded data once the COMPLETE event has fired.
 	 * @playerversion Flash 10
 	 */
-	public static function encodeAsyncWithMetadata(image : BitmapData, metadata : flash.utils.) : PNGEncoder2
+	public static function encodeAsyncWithMetadata(image : BitmapData, metadata : Dynamic) : PNGEncoder2
 	{
 		return new PNGEncoder2(image, metadata);
 	}
