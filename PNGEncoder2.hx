@@ -93,7 +93,7 @@ class PNGEncoder2 extends EventDispatcher
 	/**
 	 * Creates a PNG image from the specified BitmapData.
 	 * If the BitmapData's transparent property is true, then a 32-bit
-	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally smaller)
 	 * 24-bit PNG is generated.
 	 * Highly optimized for speed.
 	 *
@@ -110,7 +110,7 @@ class PNGEncoder2 extends EventDispatcher
 	/**
 	 * Creates a PNG image from the specified BitmapData and metadata.
 	 * If the BitmapData's transparent property is true, then a 32-bit
-	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally smaller)
 	 * 24-bit PNG is generated.
 	 * Highly optimized for speed.
 	 *
@@ -129,7 +129,7 @@ class PNGEncoder2 extends EventDispatcher
 	/**
 	 * Creates a PNG image from the specified BitmapData without blocking.
 	 * If the BitmapData's transparent property is true, then a 32-bit
-	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally smaller)
 	 * 24-bit PNG is generated.
 	 * Highly optimized for speed.
 	 *
@@ -149,7 +149,7 @@ class PNGEncoder2 extends EventDispatcher
 	 * Creates a PNG image from the specified BitmapData and metadata,
 	 * without blocking.
 	 * If the BitmapData's transparent property is true, then a 32-bit
-	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally smaller)
 	 * 24-bit PNG is generated.
 	 * Highly optimized for speed.
 	 *
@@ -160,7 +160,7 @@ class PNGEncoder2 extends EventDispatcher
 	 * property to access the encoded data once the COMPLETE event has fired.
 	 * @playerversion Flash 10
 	 */
-	public static function encodeAsyncWithMetadata(image : BitmapData, metadata : Dynamic) : PNGEncoder2
+	public static function encodeAsyncWithMetadata(image : BitmapData, metadata : flash.utils.) : PNGEncoder2
 	{
 		return new PNGEncoder2(image, metadata);
 	}
