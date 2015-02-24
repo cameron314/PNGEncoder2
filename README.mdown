@@ -82,6 +82,19 @@ encoder.addEventListener(Event.COMPLETE, function (e) {
 // want to be notified of progress
 ```
 
+### Memory-constrained environments:
+
+If you're working in a memory-constrained environment, or with truly huge images, the asynchronous
+method is usually the best choice as it encodes the image one chunk at a time, and therefore requires much
+less working memory.
+
+After encoding an image, however, the working memory is not freed. This is not a memory leak, but rather an
+optimization to speed up the next encoding (the memory is reused, which among other things eliminates the need
+to recalculate the CRC tables each time). With large images, or low available memory, this may be undesirable.
+To free the working memory, simplpy call `PNGEncoder2.freeCachedMemory()` after each encoding is complete. This
+will reduce the resident memory usage to near zero from what could otherwise be potentially several kilobytes or
+even megabytes (what a savings!).
+
 ### Bonus: PNG decoding
 
 Update: Support for synchronous decoding of PNGs that were created using PNGEncoder2 has been added:
@@ -108,6 +121,25 @@ loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function (e) {
 });
 loader.loadBytes(png);
 ```
+
+### Bonus: Metadata support
+
+Update: Support for encoding text metadata into the generated PNG has been added:
+
+```as3
+var bmp : BitmapData =  ...;
+var metadata : Object = { };
+metadata[PNGKeywords.TITLE] = "My PNG";
+metadata["Custom key"] = "Chunky bacon!";
+var png : ByteArray = new ByteArray();
+PNGEncoder2.encodeWithMetadata(bmp, png, metadata);
+png.position = 0;
+```
+
+Every  key-value pair in the given metadata object will be encoded into
+the PNG as either a tEXt chunk (if the value can be represented in Latin-1)
+or an iTXt chunk (which supports arbitrary Unicode strings).
+
 
 Installation
 ============

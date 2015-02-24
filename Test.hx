@@ -15,8 +15,10 @@ import flash.text.TextField;
 import flash.text.TextFieldAutoSize;
 import flash.utils.ByteArray;
 import flash.utils.Timer;
+import flash.Vector;
 import PNGEncoder2;
 import DeflateStream;
+//import com.remixtechnology.SWFProfiler;
 
 class Test extends Sprite
 {
@@ -36,6 +38,9 @@ class Test extends Sprite
 	public function new(?width : Int, ?height : Int)
 	{
 		super();
+		
+		//testManyQueuedSmallImages();
+		//return;
 		
 		//SWFProfiler.init();
 		//SWFProfiler.show();
@@ -137,14 +142,19 @@ class Test extends Sprite
 					bmp.draw(that.loader);
 					
 					that.png = new ByteArray();
-					that.encoder = PNGEncoder2.encodeAsync(bmp, that.png);
+					that.encoder = PNGEncoder2.encodeAsyncWithMetadata(bmp, {
+						Comment: "Hello from metadata! This is an 'é' encoded properly!",
+						Banana: "Banana ũẍ",
+					}, that.png);
 					var startTime = Lib.getTimer();
 					that.encoder.addEventListener(Event.COMPLETE, function (e : Event) {
+						PNGEncoder2.freeCachedMemory();
+						
 						var percent = 100 - e.target.png.length / (bmp.width * bmp.height * 4) * 100;
 						trace("Async complete (" + (Lib.getTimer() - startTime) + "ms; " + Std.int(percent) + "%)");
 						
 						/*var loader = new Loader();
-						loader.loadBytes(that.encoder.png);
+						loader.loadBytes(e.target.png);
 						that.addChild(loader);
 						loader.x = 250;
 						loader.y = 250;*/
@@ -198,6 +208,20 @@ class Test extends Sprite
 		trace("PNGEncoder2:\t\t\t" + opPngTime + "ms");
 		trace("x better:\t\t\t\t\t" + round(1.0 * pngTime / opPngTime, 2) + "x\n");
 	}
+	
+	
+	//private function testManyQueuedSmallImages()
+	//{
+		//var bmp = new BitmapData(80, 80, true, 0x00FFFFFF);
+		//bmp.perlinNoise(80, 80, 2, 0xDEADBEEF, false, false);
+		//
+		//encoders = new Vector<PNGEncoder2>();
+		//for (i in 0 ... 14) {
+			//var encoder = PNGEncoder2.encodeAsync(bmp);
+			//encoder.targetFPS = 13;
+			//encoders.push(encoder);
+		//}
+	//}
 	
 	
 	private static function testPNGEncoder(bmp : BitmapData, runs : Int) : Int

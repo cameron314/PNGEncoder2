@@ -1,7 +1,7 @@
 /*
 	Copyright (c) 2008, Adobe Systems Incorporated
 	Copyright (c) 2011, Pimm Hogeling and Edo Rivai
-	Copyright (c) 2011, Cameron Desrochers
+	Copyright (c) 2011-2015, Cameron Desrochers
 	All rights reserved.
 
 	Redistribution and use in source and binary forms, with or without 
@@ -57,6 +57,20 @@ import flash.Vector;
 import DeflateStream;
 
 
+class PNGKeywords
+{
+	public static var TITLE = "Title";		// Short (one line) title or caption for image
+	public static var AUTHOR = "Author";	// Name of image's creator
+	public static var DESCRIPTION = "Description";	// Description of image (possibly long)
+	public static var COPYRIGHT = "Copyright";		// Copyright notice
+	public static var CREATION_TIME = "Creation Time";	// Time of original image creation
+	public static var SOFTWARE = "Software";		// Software used to create the image
+	public static var DISCLAIMER = "Disclaimer";	// Legal disclaimer
+	public static var WARNING = "Warning";	//	Warning of nature of content
+	public static var SOURCE = "Source";	// Device used to create the image
+	public static var COMMENT = "Comment";	// Miscellaneous comment
+}
+
 // Separate public interface from private implementation because all
 // members appear as public in SWC
 class PNGEncoder2 extends EventDispatcher
@@ -66,10 +80,12 @@ class PNGEncoder2 extends EventDispatcher
 	
 	public static var level : CompressionLevel;
 	
-	// Provide both HaXe and AS3 properties to access the target FPS (read/write)
+	// Provide both HaXe and AS3 properties to access the PNG result for reading
 	@:protected private inline function get_png() { return __impl.png; }
 	@:protected public var png(get_png, null) : IDataOutput;
 	@:getter(png) private function flGetPng() { return get_png(); }
+	
+	// Provide both HaXe and AS3 properties to access the target FPS (read/write)
 	@:protected private inline function get_targetFPS() { return __impl.targetFPS; }
 	@:protected private inline function set_targetFPS(fps : Int) { return __impl.targetFPS = fps; }
 	@:protected public var targetFPS(get_targetFPS, set_targetFPS) : Int;
@@ -91,7 +107,25 @@ class PNGEncoder2 extends EventDispatcher
 	public static function encode(image : BitmapData, outPng : IDataOutput) : Void
 	{
 		PNGEncoder2Impl.level = level;
-		PNGEncoder2Impl.encode(image, outPng);
+		PNGEncoder2Impl.encode(image, outPng, null);
+	}
+	
+	/**
+	 * Creates a PNG image from the specified BitmapData and metadata.
+	 * If the BitmapData's transparent property is true, then a 32-bit
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * 24-bit PNG is generated.
+	 * Highly optimized for speed.
+	 *
+	 * @param image The BitmapData that will be converted into the PNG format.
+	 * @param metadata An object that will be treated as key-value pairs of keyword-value metadata.
+	 * @param outPng An IDataOutput (e.g. ByteArray) object that the PNG encoded image data will be written to.
+	 * @playerversion Flash 10
+	 */
+	public static function encodeWithMetadata(image : BitmapData, metadata : Dynamic, outPng : IDataOutput) : Void
+	{
+		PNGEncoder2Impl.level = level;
+		PNGEncoder2Impl.encode(image, outPng, metadata);
 	}
 	
 	
@@ -103,6 +137,7 @@ class PNGEncoder2 extends EventDispatcher
 	 * Highly optimized for speed.
 	 *
 	 * @param image The BitmapData that will be converted into the PNG format.
+	 * @param outPng An IDataOutput (e.g. ByteArray) object that the PNG encoded image data will be written to.
 	 * @return a PNGEncoder2 object that dispatches COMPLETE and PROGRESS events.
 	 * The encoder object allows the targetFPS to be set, and has a 'png'
 	 * property to access the encoded data once the COMPLETE event has fired.
@@ -110,7 +145,29 @@ class PNGEncoder2 extends EventDispatcher
 	 */
 	public static function encodeAsync(image : BitmapData, outPng : IDataOutput) : PNGEncoder2
 	{
-		return new PNGEncoder2(image, outPng);
+		return new PNGEncoder2(image, outPng, null);
+	}
+	
+	
+	/**
+	 * Creates a PNG image from the specified BitmapData and metadata,
+	 * without blocking.
+	 * If the BitmapData's transparent property is true, then a 32-bit
+	 * PNG (i.e. with alpha) is generated, otherwise a (generally samller)
+	 * 24-bit PNG is generated.
+	 * Highly optimized for speed.
+	 *
+	 * @param image The BitmapData that will be converted into the PNG format.
+	 * @param metadata An object that will be treated as key-value pairs of keyword-value metadata.
+	 * @param outPng An IDataOutput (e.g. ByteArray) object that the PNG encoded image data will be written to.
+	 * @return a PNGEncoder2 object that dispatches COMPLETE and PROGRESS events.
+	 * The encoder object allows the targetFPS to be set, and has a 'png'
+	 * property to access the encoded data once the COMPLETE event has fired.
+	 * @playerversion Flash 10
+	 */
+	public static function encodeAsyncWithMetadata(image : BitmapData, metadata : Dynamic, outPng : IDataOutput) : PNGEncoder2
+	{
+		return new PNGEncoder2(image, outPng, metadata);
 	}
 	
 	
@@ -128,13 +185,25 @@ class PNGEncoder2 extends EventDispatcher
 		return PNGEncoder2Impl.decode(pngBytes);
 	}
 #end
+
+	/**
+	 * Clears any long-term cached memory (e.g. CRC tables) in order
+	 * to reduce memory usage. This is only needed in resource-constrained
+	 * environments; it's faster to leave the cache intact between
+	 * encodings.
+	*/
+	public static function freeCachedMemory()
+	{
+		PNGEncoder2Impl.freeCachedMemory();
+	}
 	
-	private inline function new(image : BitmapData, outPng : IDataOutput)
+	
+	private inline function new(image : BitmapData, outPng : IDataOutput, metadata : Dynamic)
 	{
 		super();
 		
 		PNGEncoder2Impl.level = level;
-		__impl = new PNGEncoder2Impl(image, outPng, this);
+		__impl = new PNGEncoder2Impl(image, outPng, this, metadata);
 	}
 }
 
@@ -156,6 +225,7 @@ class PNGEncoder2 extends EventDispatcher
 	private static inline var CHUNK_START = DEFLATE_SCRATCH + DeflateStream.SCRATCH_MEMORY_SIZE;
 	
 	private static inline var FRAME_AVG_SMOOTH_COUNT = 4;	// Number of frames to calculate averages from. Must be power of 2
+	private static inline var FIRST_UPDATE_PIXELS = 20 * 1024;			// Encode this many pixels right away on the first frame
 	private static inline var MIN_PIXELS_PER_UPDATE = 20 * 1024;		// Always compress at least this many pixels per chunk
 	private static var data : ByteArray;	// The select()ed working memory
 	private static var sprite : Sprite;		// Used purely to listen to ENTER_FRAME events
@@ -187,17 +257,18 @@ class PNGEncoder2 extends EventDispatcher
 	private var lastFrameStart : Int;				// Lib.getTimer() value. Used to calculate millisecond delta between two frames
 	private var step : Int;							// Number of scanlines to process during the next update (in order to approximate targetFPS, but without wasting cycles)
 	private var done : Bool;						// Whether there's any more scanlines to process or not
-	private var timer : Timer;						// Used to trigger an update as often as possible
+	private var metadata : Dynamic;					// Treated as key-value pairs of tEXt/iTXt metadata
 	
 	private var frameCount : Int;					// Total number of frames that have elapsed so far during the encoding
 	
-	public static inline function encode(img : BitmapData, png : IDataOutput) : Void
+	
+	public static inline function encode(img : BitmapData, png : IDataOutput, metadata : Dynamic) : Void
 	{
 		// Save current domain memory and restore it after, to avoid
 		// conflicts with other components using domain memory
 		var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 		
-		beginEncoding(img, png);
+		beginEncoding(img, png, metadata);
 		
 		// Initialize stream for IDAT chunks
 		var deflateStream = DeflateStream.createEx(level, DEFLATE_SCRATCH, CHUNK_START, true);
@@ -258,7 +329,12 @@ class PNGEncoder2 extends EventDispatcher
 					pngBytes.readBytes(idatData, idatData.position, chunkLength);
 					idatData.position += chunkLength;
 				}
-				pngBytes.readInt();		// Ignore CRC-32 of chunk
+				else {
+					for (i in 0 ... chunkLength) {
+						pngBytes.readByte();
+					}
+				}
+				pngBytes.readUnsignedInt();		// Ignore CRC-32 of chunk
 				chunkLength = pngBytes.readUnsignedInt();
 				chunkType = pngBytes.readUnsignedInt();
 			}
@@ -506,7 +582,7 @@ class PNGEncoder2 extends EventDispatcher
 	}
 #end
 	
-	private static inline function beginEncoding(img : BitmapData, png : IDataOutput)
+	private static inline function beginEncoding(img : BitmapData, png : IDataOutput, metadata : Dynamic)
 	{
 		if (encoding) {
 			throw new Error("Only one PNG can be encoded at once (are you encoding asynchronously while attempting to encode another PNG synchronously?)");
@@ -543,6 +619,8 @@ class PNGEncoder2 extends EventDispatcher
 		writePNGSignature(png);
 		
 		writeIHDRChunk(img, png);
+		
+		writeMetadataChunks(metadata, png);
 	}
 	
 	
@@ -555,22 +633,23 @@ class PNGEncoder2 extends EventDispatcher
 	
 	
 	
-	public inline function new(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher)
+	public inline function new(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher, metadata : Dynamic)
 	{
-		_new(image, png, dispatcher);		// Constructors are slow -- delegate to function
+		targetFPS = 20;					// Default, can be overridden
+		_new(image, png, dispatcher, metadata);		// Constructors are slow -- delegate to function
 	}
 	
-	private function _new(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher)
+	private function _new(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher, metadata : Dynamic)
 	{
-		fastNew(image, png, dispatcher);
+		fastNew(image, png, dispatcher, metadata);
 	}
 	
-	private inline function fastNew(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher)
+	private inline function fastNew(image : BitmapData, png : IDataOutput, dispatcher : IEventDispatcher, metadata : Dynamic)
 	{
 		img = image;
 		this.png = png;
 		this.dispatcher = dispatcher;
-		targetFPS = 20;		// Default, can be overridden
+		this.metadata = metadata;
 		
 		if (encoding) {
 			// Add to queue for later!
@@ -583,7 +662,7 @@ class PNGEncoder2 extends EventDispatcher
 			// it once we've finished using it
 			var oldFastMem = ApplicationDomain.currentDomain.domainMemory;
 			
-			beginEncoding(img, png);
+			beginEncoding(img, png, metadata);
 			currentY = 0;
 			frameCount = 0;
 			done = false;
@@ -600,9 +679,6 @@ class PNGEncoder2 extends EventDispatcher
 			
 			// Get notified of new frames, and timer events
 			sprite.addEventListener(Event.ENTER_FRAME, onEnterFrame);
-			timer = new Timer(1);		// Really means "update as often as possible"
-			timer.addEventListener(TimerEvent.TIMER, onTimer);
-			timer.start();
 			
 			// We write data in chunks (one per update), starting with one
 			// chunk right now in order to gather some statistics up front
@@ -617,7 +693,7 @@ class PNGEncoder2 extends EventDispatcher
 				var startTime = Lib.getTimer();
 				
 				// Write first ~20K pixels to see how fast it is
-				var height = Math.ceil(Math.min(20 * 1024 / img.width, img.height));
+				var height = Math.ceil(Math.min(FIRST_UPDATE_PIXELS / img.width, img.height));
 				writeIDATChunk(img, 0, height, deflateStream, png);
 				
 				var endTime = Lib.getTimer();
@@ -649,7 +725,7 @@ class PNGEncoder2 extends EventDispatcher
 	private inline function updateMsPerLine(ms : Int, lines : Int)
 	{
 		if (lines != 0) {
-			if (ms == 0) {
+			if (ms <= 0) {
 				// Can occasionally happen because timer resolution on Windows is limited to 10ms
 				ms = 5;		// Guess!
 			}
@@ -756,10 +832,6 @@ class PNGEncoder2 extends EventDispatcher
 	private function onEnterFrame(e : Event)
 	{
 		updateFrameInfo();
-	}
-	
-	private function onTimer(e : TimerEvent)
-	{
 		update();
 	}
 	
@@ -781,10 +853,10 @@ class PNGEncoder2 extends EventDispatcher
 	
 	private inline function update()
 	{
-		// Need to check if we've finished or not since it's possible
-		// for the timer event to be dispatched before we stop it, but get
-		// processed after we've finished (e.g. if there's two timer events
-		// in the event queue and the first one finishes the work, the second
+		// Need to check if we've finished or not since it's possible (if we're
+		// attached to a timer) for a timer event to be dispatched before we stop
+		// it, but get processed after we've finished (e.g. if there's two timer
+		// events in the event queue and the first one finishes the work, the second
 		// will still cause this function to be entered since it was generated
 		// before we stopped the timer).
 		if (!done) {
@@ -841,9 +913,10 @@ class PNGEncoder2 extends EventDispatcher
 			}
 			
 			if (done) {
+				//trace("Async encoding finished on frame " + __frame + " (targetFPS was " + targetFPS + ")");
+				
 				// Clear some references to give the garbage collector an easier time
 				dispatcher = null;		// This removes a circular reference, which might save a mark-and-sweep step
-				timer = null;
 				img = null;
 				deflateStream = null;
 				msPerFrame = null;
@@ -854,7 +927,7 @@ class PNGEncoder2 extends EventDispatcher
 					// Need to check `encoding` just in case someone started encoding another PNG
 					// in the async COMPLETED event handler
 					var next = pendingAsyncEncodings.shift();
-					next._new(next.img, next.png, next.dispatcher);
+					next._new(next.img, next.png, next.dispatcher, next.metadata);
 				}
 			}
 		}
@@ -869,8 +942,6 @@ class PNGEncoder2 extends EventDispatcher
 			done = true;
 			
 			sprite.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
-			timer.removeEventListener(TimerEvent.TIMER, onTimer);
-			timer.stop();
 			
 			endEncoding(png);
 			
@@ -914,6 +985,93 @@ class PNGEncoder2 extends EventDispatcher
 		Memory.setByte(CHUNK_START + 12, 0);	// No interlacing
 		
 		writeChunk(png, 0x49484452, chunkLength);
+	}
+	
+	
+	private static function writeMetadataChunks(metadata : Dynamic, png : IDataOutput)
+	{
+		if (metadata != null) {
+			var chunkData = new ByteArray();
+			Memory.select(data);
+			
+			var fields = Reflect.fields(metadata);
+			if (fields == null || fields.length == 0) {
+				var cls = Type.getClass(metadata);
+				if (cls != null) {
+					fields = Type.getInstanceFields(cls);
+				}
+			}
+			for (field in fields) {
+				// Check if the field matches the constraints
+				// outlined in http://www.libpng.org/pub/png/spec/iso/index-object.html#11textinfo
+				
+				if (field.length < 1 || field.length > 79) {
+					continue;
+				}
+				
+				chunkData.clear();
+				chunkData.position = 0;
+				var validChars = true;
+				for (i in 0 ... field.length) {
+					var c = field.charCodeAt(i);
+					if (!(c >= 32 && c <= 126 || c >= 161 && c <= 255)) {
+						validChars = false;
+						break;
+					}
+					chunkData.writeByte(c);
+				}
+				if (!validChars) {
+					continue;
+				}
+				
+				var rawValue : Dynamic = Reflect.field(metadata, field);
+				if (rawValue == null || Reflect.isFunction(rawValue)) {
+					continue;
+				}
+				
+				// Convert value to string and normalize newlines
+				var value = Std.string(rawValue);
+				value = StringTools.replace(value, "\r\n", "\n");				
+				value = StringTools.replace(value, "\r", "\n");
+				
+				var isLatin1 = true;
+				for (i in 0 ... value.length) {
+					var c = value.charCodeAt(i);
+					if (c < 0 || c > 255) {
+						isLatin1 = false;
+						break;
+					}
+				}
+				
+				if (isLatin1) {
+					// tEXt
+					chunkData.writeByte(0);		// Null separator
+					for (i in 0 ... value.length) {
+						chunkData.writeByte(value.charCodeAt(i));
+					}
+				}
+				else {
+					// iTXt
+					//chunkData.writeByte(0);	// Null separator
+					//chunkData.writeByte(0);	// No compression
+					//chunkData.writeByte(0);	// Compression method
+					//chunkData.writeByte(0);	// No language tag
+					chunkData.writeInt(0);
+					
+					chunkData.writeByte(0);		// No translated keyword
+					chunkData.writeUTFBytes(value);
+				}
+				
+				var minLength : UInt = CHUNK_START + chunkData.length;
+				if (data.length < minLength) {
+					data.length = Std.int(Math.max(CHUNK_START + chunkData.length, ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH));
+					Memory.select(data);
+				}
+				chunkData.position = 0;
+				memcpy(chunkData, CHUNK_START);
+				writeChunk(png, isLatin1 ? 0x74455874 : 0x69545874, chunkData.length);
+			}
+		}
 	}
 	
 	
@@ -1376,5 +1534,21 @@ class PNGEncoder2 extends EventDispatcher
 	{
 		return Memory.getI32((index & 0xFF) << 2);
 	}
+	
+	public static inline function freeCachedMemory()
+	{
+		if (encoding) {
+			throw new Error("Cached resources cannot be freed while an image is being encoded");
+		}
+		
+		if (crcComputed) {
+			if (ApplicationDomain.currentDomain.domainMemory == data) {
+				Memory.select(null);
+			}
+			region = null;
+			sprite = null;
+			data = null;
+			crcComputed = false;
+		}
+	}
 }
-
