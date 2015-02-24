@@ -141,7 +141,11 @@ class Test extends Sprite
 					var bmp = new BitmapData(Std.int(that.loader.width), Std.int(that.loader.height), true, 0x00FFFFFF);
 					bmp.draw(that.loader);
 					
-					that.encoder = PNGEncoder2.encodeAsync(bmp);
+					that.encoder = PNGEncoder2.encodeAsyncWithMetadata(bmp, {
+						Software: "PNGEncoder2",
+						Comment: "Hello from metadata! This is an 'é' encoded properly!",
+						Banana: "Banana ũẍ",
+					});
 					var startTime = Lib.getTimer();
 					that.encoder.addEventListener(Event.COMPLETE, function (e : Event) {
 						PNGEncoder2.freeCachedMemory();
